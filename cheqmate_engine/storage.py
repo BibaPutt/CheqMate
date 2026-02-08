@@ -202,6 +202,21 @@ class Storage:
             conn.rollback()
             raise
 
+    def delete_fingerprint(self, submission_id):
+        """Delete fingerprint for a specific submission (called when file is deleted)"""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("DELETE FROM fingerprints WHERE submission_id = ?", (submission_id,))
+            deleted_count = cursor.rowcount
+            conn.commit()
+            logger.info(f"Deleted fingerprint for submission {submission_id}")
+            return deleted_count
+        except Exception as e:
+            logger.error(f"Error deleting fingerprint: {e}")
+            conn.rollback()
+            raise
+
     def get_fingerprint_count(self, assignment_id=None):
         """Get count of stored fingerprints, optionally filtered by assignment"""
         conn = self._get_conn()

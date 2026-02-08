@@ -306,6 +306,26 @@ async def cache_stats(assignment_id: int):
     }
 
 
+@app.delete("/fingerprint/{submission_id}")
+async def delete_fingerprint(submission_id: int):
+    """
+    Delete fingerprint for a specific submission.
+    Called by Moodle plugin when a file is deleted from a submission.
+    """
+    logger.info(f"Deleting fingerprint for submission {submission_id}")
+    try:
+        deleted = storage.delete_fingerprint(submission_id)
+        return {
+            "status": "success",
+            "submission_id": submission_id,
+            "deleted_count": deleted,
+            "message": f"Deleted {deleted} fingerprint(s)"
+        }
+    except Exception as e:
+        logger.error(f"Failed to delete fingerprint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/ai-analysis")
 async def get_ai_analysis(text: str):
     """Get detailed AI analysis breakdown (for debugging/display)"""

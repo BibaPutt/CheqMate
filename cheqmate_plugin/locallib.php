@@ -280,6 +280,18 @@ class assign_submission_cheqmate extends assign_submission_plugin {
 
             $threshold = $settings->plagiarism_threshold;
             if (isset($result['status']) && $result['status'] == 'processed' && $result['plagiarism_score'] > $threshold) {
+                // Delete the fingerprint since submission is blocked (prevents 100% self-match on re-upload)
+                $delete_endpoint = $api_url . '/fingerprint/' . $submission->id;
+                $dch = curl_init($delete_endpoint);
+                curl_setopt($dch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($dch, CURLOPT_CUSTOMREQUEST, 'DELETE');
+                curl_setopt($dch, CURLOPT_TIMEOUT, 10);
+                curl_exec($dch);
+                curl_close($dch);
+                
+                // Also remove result record from Moodle DB
+                $DB->delete_records('assignsub_cheqmate_res', ['submission' => $submission->id]);
+                
                 $error_data = new stdClass();
                 $error_data->score = $result['plagiarism_score'];
                 $error_data->ai = $result['ai_probability'];
@@ -287,6 +299,30 @@ class assign_submission_cheqmate extends assign_submission_plugin {
                 throw new moodle_exception('submission_blocked_detailed', 'assignsubmission_cheqmate', '', $error_data);
             }
         }
+        
+        return true;
+    }
+
+    /**
+     * Called when a submission is removed/deleted by the student.
+     * Cleans up plagiarism data to prevent ghost records and self-plagiarism on re-upload.
+     */
+    public function remove(stdClass $submission) {
+        global $DB;
+        
+        // Delete from local Moodle DB
+        $DB->delete_records('assignsub_cheqmate_res', ['submission' => $submission->id]);
+        
+        // Call engine to delete fingerprint
+        $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://localhost:8000';
+        $endpoint = $api_url . '/fingerprint/' . $submission->id;
+        
+        $ch = curl_init($endpoint);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        curl_exec($ch);
+        curl_close($ch);
         
         return true;
     }
