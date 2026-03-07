@@ -34,6 +34,7 @@ class Storage:
                 submission_id INTEGER UNIQUE,
                 context_id INTEGER,
                 assignment_id INTEGER,
+                student_name TEXT,
                 hashes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -57,6 +58,9 @@ class Storage:
         if 'assignment_id' not in columns:
             cursor.execute("ALTER TABLE fingerprints ADD COLUMN assignment_id INTEGER")
             logger.info("Migrated fingerprints table: added assignment_id column")
+        if 'student_name' not in columns:
+            cursor.execute("ALTER TABLE fingerprints ADD COLUMN student_name TEXT DEFAULT 'Unknown'")
+            logger.info("Migrated fingerprints table: added student_name column")
         
         # Add indexes AFTER migration (so column exists)
         try:
@@ -69,7 +73,7 @@ class Storage:
         conn.commit()
         logger.info(f"Database initialized at {DB_PATH}")
 
-    def save_fingerprint(self, submission_id, context_id, hashes, assignment_id=None):
+    def save_fingerprint(self, submission_id, context_id, hashes, assignment_id=None, student_name="Unknown"):
         """Save document fingerprint with explicit commit for persistence"""
         conn = self._get_conn()
         cursor = conn.cursor()
@@ -77,8 +81,8 @@ class Storage:
             # Remove existing if any (re-submission)
             cursor.execute("DELETE FROM fingerprints WHERE submission_id = ?", (submission_id,))
             cursor.execute(
-                "INSERT INTO fingerprints (submission_id, context_id, assignment_id, hashes) VALUES (?, ?, ?, ?)",
-                (submission_id, context_id, assignment_id, json.dumps(list(hashes)))
+                "INSERT INTO fingerprints (submission_id, context_id, assignment_id, student_name, hashes) VALUES (?, ?, ?, ?, ?)",
+                (submission_id, context_id, assignment_id, student_name, json.dumps(list(hashes)))
             )
             conn.commit()  # Explicit commit for durability
             logger.info(f"Saved fingerprint for submission {submission_id}, assignment {assignment_id}")
@@ -99,13 +103,13 @@ class Storage:
         if assignment_id:
             # Peer comparison within same assignment only
             cursor.execute(
-                "SELECT submission_id, hashes FROM fingerprints WHERE assignment_id = ? AND submission_id != ?", 
+                "SELECT submission_id, hashes, student_name FROM fingerprints WHERE assignment_id = ? AND submission_id != ?", 
                 (assignment_id, exclude_submission_id)
             )
         else:
             # Fallback to context for backward compatibility
             cursor.execute(
-                "SELECT submission_id, hashes FROM fingerprints WHERE context_id = ? AND submission_id != ?", 
+                "SELECT submission_id, hashes, student_name FROM fingerprints WHERE context_id = ? AND submission_id != ?", 
                 (context_id, exclude_submission_id)
             )
         
@@ -114,7 +118,8 @@ class Storage:
         for r in rows:
             try:
                 hashes = set(json.loads(r[1]))
-                result.append({"submission_id": r[0], "hashes": hashes})
+                s_name = r[2] if r[2] else "Unknown"
+                result.append({"submission_id": r[0], "hashes": hashes, "student_name": s_name})
             except json.JSONDecodeError:
                 logger.warning(f"Invalid JSON for submission {r[0]}")
         

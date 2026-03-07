@@ -14,7 +14,7 @@ class PlagiarismDetector:
             r'^#+\s*aim',
             r'^#+\s*introduction',
             r'^#+\s*objective',
-            r'^#+\s*abstract',
+            r'^#+\s*abstract',  
             r'^aim\s*:',
             r'^introduction\s*:',
             r'^objective\s*:',

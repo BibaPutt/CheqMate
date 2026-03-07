@@ -15,8 +15,17 @@ logger = logging.getLogger(__name__)
 class DocumentProcessor:
     def __init__(self):
         # Allow overriding tesseract path via env var if needed
-        # pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-        pass
+        # On Windows, try to find it, but don't hard crash if Linux
+        if os.name == 'nt':
+            paths = [
+                r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+                r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
+                os.path.expandvars(r'%LOCALAPPDATA%\Tesseract-OCR\tesseract.exe')
+            ]
+            for p in paths:
+                if os.path.exists(p):
+                    pytesseract.pytesseract.tesseract_cmd = p
+                    break
 
     def extract_text(self, file_path: str) -> str:
         """
@@ -63,10 +72,28 @@ class DocumentProcessor:
             if text.strip():
                 full_text.append(text)
             
-            # 2. If page has images, or very little text (scanned PDF), run OCR on images
-            # Heuristic: If text length < 50 chars, assume scanned
-            if len(text.strip()) < 50:
-                logger.info(f"Page {page_num} seems scanned. Running OCR.")
+            # 2. Extract and OCR all embedded images
+            image_list = page.get_images(full=True)
+            for img_index, img in enumerate(image_list):
+                try:
+                    xref = img[0]
+                    base_image = doc.extract_image(xref)
+                    image_bytes = base_image["image"]
+                    
+                    # Convert to numpy array for cv2
+                    nparr = np.frombuffer(image_bytes, np.uint8)
+                    cv_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    
+                    if cv_img is not None:
+                        ocr_text = pytesseract.image_to_string(self._preprocess_image(cv_img))
+                        if ocr_text.strip():
+                            full_text.append(ocr_text)
+                except Exception as img_err:
+                    logger.warning(f"Failed to extract/OCR embedded image on page {page_num}: {img_err}")
+            
+            # 3. If there was basically NO text AND NO embedded images, it might be a flat scanned page.
+            if len(text.strip()) < 50 and not image_list:
+                logger.info(f"Page {page_num} seems entirely scanned with no explicit image objects. Rendering whole page.")
                 pix = page.get_pixmap()
                 img_data = pix.tobytes("png")
                 nparr = np.frombuffer(img_data, np.uint8)
@@ -76,7 +103,7 @@ class DocumentProcessor:
                     ocr_text = pytesseract.image_to_string(self._preprocess_image(img))
                     full_text.append(ocr_text)
                 except Exception as ocr_err:
-                    logger.warning(f"OCR Failed for page {page_num}: {ocr_err}")
+                    logger.warning(f"OCR Failed for rendered page {page_num}: {ocr_err}")
                     full_text.append("[OCR Failed - Scanned Image Detected]")
                 
         return "\n".join(full_text)

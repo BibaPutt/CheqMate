@@ -27,7 +27,10 @@ The engine must be running for Moodle to perform plagiarism and AI checks.
 ### Prerequisites
 *   Python 3.8 or higher installed.
 *   Pip (Python package manager).
-
+*   **Tesseract OCR** (Required for processing images within PDFs)
+    *   **Windows**: Download the installer from [UB-Mannheim Tesseract](https://github.com/UB-Mannheim/tesseract/wiki). Run it and ensure `C:\Program Files\Tesseract-OCR` is added to your Windows Environment `PATH`. 
+    *   **Linux**: Run `sudo apt-get update && sudo apt-get install tesseract-ocr`.
+    
 ### Installation Steps
 
 1.  Open a terminal or command prompt (PowerShell/CMD).

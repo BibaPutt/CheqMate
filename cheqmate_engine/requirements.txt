@@ -10,3 +10,5 @@ numpy
 scikit-learn
 nltk
 langchain-text-splitters
+joblib
+pandas
