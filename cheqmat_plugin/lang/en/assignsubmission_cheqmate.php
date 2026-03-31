@@ -38,6 +38,7 @@ $string['error_display'] = 'Analysis error. Contact administrator.';
 
 $string['submission_blocked'] = 'Submission blocked: Plagiarism score {$a}% exceeds limit.';
 $string['submission_blocked_detailed'] = 'Blocked: Plagiarism {$a->score}%, AI {$a->ai}%. Matches: {$a->details}';
+$string['error_no_files'] = 'You must upload at least one file before submitting.';
 
 // Course settings
 $string['course_settings'] = 'CheqMate Settings';

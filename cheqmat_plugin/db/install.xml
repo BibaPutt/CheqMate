@@ -18,7 +18,7 @@
         <FIELD NAME="criteria_name" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT="Punctuality" SEQUENCE="false"/>
         <FIELD NAME="deduction_amount" TYPE="number" LENGTH="10" DECIMALS="2" NOTNULL="true" DEFAULT="0.10" SEQUENCE="false"/>
         <FIELD NAME="deduction_interval" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>
-        <FIELD NAME="start_deducting_after" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="start_deducting_after" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="3" SEQUENCE="false"/>
         <FIELD NAME="minimum_mark" TYPE="number" LENGTH="10" DECIMALS="2" NOTNULL="true" DEFAULT="1.00" SEQUENCE="false"/>
       </FIELDS>
       <KEYS>

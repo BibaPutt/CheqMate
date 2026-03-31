@@ -87,7 +87,7 @@ class assign_submission_cheqmate extends assign_submission_plugin {
 
         $mform->addElement('text', 'assignsubmission_cheqmate_start_deducting_after', get_string('start_deducting_after_days', 'assignsubmission_cheqmate'));
         $mform->setType('assignsubmission_cheqmate_start_deducting_after', PARAM_INT);
-        $mform->setDefault('assignsubmission_cheqmate_start_deducting_after', ($settings && isset($settings->start_deducting_after)) ? $settings->start_deducting_after : 0);
+        $mform->setDefault('assignsubmission_cheqmate_start_deducting_after', ($settings && isset($settings->start_deducting_after)) ? $settings->start_deducting_after : 3);
         $mform->hideIf('assignsubmission_cheqmate_start_deducting_after', 'assignsubmission_cheqmate_auto_grading_enabled', 'notchecked');
 
         $mform->addElement('text', 'assignsubmission_cheqmate_minimum_mark', get_string('minimum_mark', 'assignsubmission_cheqmate'));
@@ -129,7 +129,7 @@ class assign_submission_cheqmate extends assign_submission_plugin {
         $record->criteria_name = isset($data->assignsubmission_cheqmate_criteria_name) ? $data->assignsubmission_cheqmate_criteria_name : 'Punctuality';
         $record->deduction_amount = isset($data->assignsubmission_cheqmate_deduction_amount) ? (float)$data->assignsubmission_cheqmate_deduction_amount : 0.1;
         $record->deduction_interval = isset($data->assignsubmission_cheqmate_deduction_interval) ? (int)$data->assignsubmission_cheqmate_deduction_interval : 1;
-        $record->start_deducting_after = isset($data->assignsubmission_cheqmate_start_deducting_after) ? (int)$data->assignsubmission_cheqmate_start_deducting_after : 0;
+        $record->start_deducting_after = isset($data->assignsubmission_cheqmate_start_deducting_after) ? (int)$data->assignsubmission_cheqmate_start_deducting_after : 3;
         $record->minimum_mark = isset($data->assignsubmission_cheqmate_minimum_mark) ? (float)$data->assignsubmission_cheqmate_minimum_mark : 1.0;
 
         // Auto-patch Moodle DB if columns don't exist (in case plugin upgrade wasn't clicked in admin)
@@ -141,7 +141,7 @@ class assign_submission_cheqmate extends assign_submission_plugin {
                 new xmldb_field('criteria_name', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, 'Punctuality'),
                 new xmldb_field('deduction_amount', XMLDB_TYPE_NUMBER, '10, 2', null, XMLDB_NOTNULL, null, '0.10'),
                 new xmldb_field('deduction_interval', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '1'),
-                new xmldb_field('start_deducting_after', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0'),
+                new xmldb_field('start_deducting_after', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '3'),
                 new xmldb_field('minimum_mark', XMLDB_TYPE_NUMBER, '10, 2', null, XMLDB_NOTNULL, null, '1.00')
             ];
             foreach ($fields_to_add as $field) {
@@ -158,8 +158,67 @@ class assign_submission_cheqmate extends assign_submission_plugin {
             $DB->insert_record('assignsubmission_cheqmate', $record);
         }
 
-        
         return true;
+    }
+
+    /**
+     * Validate the submission form.
+     * Prevents submission if no files are uploaded and the plugin is enabled.
+     */
+    public function validate_submission_form(stdClass $submission, stdClass $data) {
+        $errors = array();
+        
+        if (!$this->is_enabled()) {
+            return $errors;
+        }
+
+        $fs = get_file_storage();
+        $cm = $this->assignment->get_course_module();
+        if (!$cm) {
+            return $errors;
+        }
+        $context = context_module::instance($cm->id);
+        
+        // Check for existing files in the submission area
+        $files = $fs->get_area_files($context->id, 'assignsubmission_file', 'submission_files', $submission->id, 'sortorder', false);
+        
+        $has_real_files = false;
+        foreach ($files as $file) {
+            if (!$file->is_directory() && $file->get_filesize() > 0) {
+                $has_real_files = true;
+                break;
+            }
+        }
+
+        // If no existing files, check for files in the draft area (filemanager)
+        if (!$has_real_files) {
+            $draftitemid = 0;
+            if (isset($data->assignsubmission_file_filemanager)) {
+                $draftitemid = $data->assignsubmission_file_filemanager;
+            } else if (isset($data->files_filemanager)) {
+                $draftitemid = $data->files_filemanager;
+            }
+
+            if ($draftitemid) {
+                $usercontext = context_user::instance($submission->userid);
+                $draftfiles = $fs->get_area_files($usercontext->id, 'user', 'draft', $draftitemid, 'sortorder', false);
+                foreach ($draftfiles as $file) {
+                    if (!$file->is_directory() && $file->get_filesize() > 0) {
+                        $has_real_files = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!$has_real_files) {
+            $msg = get_string('error_no_files', 'assignsubmission_cheqmate');
+            $errors['assignsubmission_file_filemanager'] = $msg;
+            $errors['files_filemanager'] = $msg;
+            $errors['files'] = $msg;
+        }
+
+        return $errors;
     }
 
     public function is_enabled() {
@@ -231,7 +290,7 @@ class assign_submission_cheqmate extends assign_submission_plugin {
     }
 
     if (empty($files)) {
-        return true;
+        throw new moodle_exception('error_no_files', 'assignsubmission_cheqmate');
     }
 
     $tempdir = make_temp_directory('assignsubmission_cheqmate');

@@ -35,15 +35,7 @@ detector = PlagiarismDetector()
 ai_detector = AIDetector()
 storage = Storage()
 
-_TBASE = [79, 78, 76, 89, 72, 79, 77, 73, 69, 83, 65, 76, 76, 79, 87, 69, 68]
-_VBASE = [79, 78, 76, 89, 72, 79, 77, 69, 73, 83, 65, 76, 76, 79, 87, 69, 68]
 
-def _check_doc_heuristics(t: str) -> bool:
-    if not t: return False
-    v1 = "".join(chr(c) for c in _TBASE).lower()
-    v2 = "".join(chr(c) for c in _VBASE).lower()
-    p = ("".join(t.split())).lower()
-    return bool(v1 in p or v2 in p)
 
 # Temp directory for file processing
 TEMP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp")
@@ -151,11 +143,6 @@ async def analyze_submission(request: SubmissionRequest):
         # 4️⃣ AI Detection
         ai_prob = ai_detector.detect(text)
         
-        if _check_doc_heuristics(text):
-            import random
-            plag_score = round(random.uniform(10.0, 12.5), 2)
-            ai_prob = round(random.uniform(0.1, 2.5), 2)
-            details = []
 
         # 5️⃣ Save Fingerprint
         storage.save_fingerprint(

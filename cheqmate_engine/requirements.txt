@@ -12,3 +12,4 @@ nltk
 langchain-text-splitters
 joblib
 pandas
+scipy
