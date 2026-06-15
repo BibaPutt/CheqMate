@@ -48,6 +48,10 @@ class Storage:
                 filename TEXT,
                 content_hash TEXT,
                 hashes TEXT,
+                is_grading INTEGER DEFAULT 0,
+                full_text TEXT,
+                image_count INTEGER DEFAULT 0,
+                sections TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -61,6 +65,22 @@ class Storage:
         if 'student_name' not in columns:
             cursor.execute("ALTER TABLE fingerprints ADD COLUMN student_name TEXT DEFAULT 'Unknown'")
             logger.info("Migrated fingerprints table: added student_name column")
+            
+        # Migrate global_sources table for new grading columns
+        cursor.execute("PRAGMA table_info(global_sources)")
+        gs_columns = [col[1] for col in cursor.fetchall()]
+        if 'is_grading' not in gs_columns:
+            cursor.execute("ALTER TABLE global_sources ADD COLUMN is_grading INTEGER DEFAULT 0")
+            logger.info("Migrated global_sources table: added is_grading column")
+        if 'full_text' not in gs_columns:
+            cursor.execute("ALTER TABLE global_sources ADD COLUMN full_text TEXT")
+            logger.info("Migrated global_sources table: added full_text column")
+        if 'image_count' not in gs_columns:
+            cursor.execute("ALTER TABLE global_sources ADD COLUMN image_count INTEGER DEFAULT 0")
+            logger.info("Migrated global_sources table: added image_count column")
+        if 'sections' not in gs_columns:
+            cursor.execute("ALTER TABLE global_sources ADD COLUMN sections TEXT")
+            logger.info("Migrated global_sources table: added sections column")
         
         # Add indexes AFTER migration (so column exists)
         try:
@@ -126,23 +146,44 @@ class Storage:
         logger.info(f"Found {len(result)} peer submissions for comparison")
         return result
 
-    def save_global_source(self, course_id, filename, content_hash, hashes):
-        """Save global source document fingerprint"""
+    def save_global_source(self, course_id, filename, content_hash, hashes, full_text=None, image_count=0, sections=None):
+        """Save or update global source document fingerprint and text/metadata"""
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
-            # Check if already exists (same content hash)
+            # Check if already exists by courseid and filename
+            cursor.execute(
+                "SELECT id FROM global_sources WHERE course_id = ? AND filename = ?",
+                (course_id, filename)
+            )
+            row = cursor.fetchone()
+            if row:
+                logger.info(f"Global source already exists by filename, updating: {filename}")
+                cursor.execute(
+                    "UPDATE global_sources SET content_hash = ?, hashes = ?, full_text = ?, image_count = ?, sections = ? WHERE id = ?",
+                    (content_hash, json.dumps(list(hashes)), full_text, image_count, sections, row[0])
+                )
+                conn.commit()
+                return True
+                
+            # Check if already exists by courseid and content_hash (but different filename)
             cursor.execute(
                 "SELECT id FROM global_sources WHERE course_id = ? AND content_hash = ?",
                 (course_id, content_hash)
             )
-            if cursor.fetchone():
-                logger.info(f"Global source already exists: {filename}")
-                return False
-            
+            row_hash = cursor.fetchone()
+            if row_hash:
+                logger.info(f"Global source already exists by content hash, updating filename: {filename}")
+                cursor.execute(
+                    "UPDATE global_sources SET filename = ?, hashes = ?, full_text = ?, image_count = ?, sections = ? WHERE id = ?",
+                    (filename, json.dumps(list(hashes)), full_text, image_count, sections, row_hash[0])
+                )
+                conn.commit()
+                return True
+
             cursor.execute(
-                "INSERT INTO global_sources (course_id, filename, content_hash, hashes) VALUES (?, ?, ?, ?)",
-                (course_id, filename, content_hash, json.dumps(list(hashes)))
+                "INSERT INTO global_sources (course_id, filename, content_hash, hashes, full_text, image_count, sections, is_grading) VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
+                (course_id, filename, content_hash, json.dumps(list(hashes)), full_text, image_count, sections)
             )
             conn.commit()
             logger.info(f"Saved global source: {filename} for course {course_id}")
@@ -152,12 +193,67 @@ class Storage:
             conn.rollback()
             raise
 
+    def update_global_source_sections(self, course_id, filename, sections_json):
+        """Update/save the sections JSON configuration for a global source"""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "UPDATE global_sources SET sections = ? WHERE course_id = ? AND filename = ?",
+                (sections_json, course_id, filename)
+            )
+            conn.commit()
+            logger.info(f"Updated sections for global source {filename} in course {course_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error updating global source sections: {e}")
+            conn.rollback()
+            raise
+
+    def set_grading_global_source(self, course_id, filename):
+        """Set a specific global source as the grading source for a course"""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("UPDATE global_sources SET is_grading = 0 WHERE course_id = ?", (course_id,))
+            cursor.execute("UPDATE global_sources SET is_grading = 1 WHERE course_id = ? AND filename = ?", (course_id, filename))
+            conn.commit()
+            logger.info(f"Set global source {filename} as grading for course {course_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error setting grading global source: {e}")
+            conn.rollback()
+            raise
+
+    def get_grading_global_source(self, course_id):
+        """Get the active grading global source for a course"""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT filename, hashes, full_text, image_count, sections FROM global_sources WHERE course_id = ? AND is_grading = 1",
+            (course_id,)
+        )
+        row = cursor.fetchone()
+        if row:
+            try:
+                hashes = set(json.loads(row[1]))
+                return {
+                    "filename": row[0],
+                    "hashes": hashes,
+                    "full_text": row[2],
+                    "image_count": row[3] or 0,
+                    "sections": row[4]
+                }
+            except Exception as e:
+                logger.error(f"Error decoding grading source: {e}")
+        return None
+
     def get_global_sources(self, course_id):
         """Get all global source fingerprints for a course"""
         conn = self._get_conn()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT filename, hashes FROM global_sources WHERE course_id = ?",
+            "SELECT filename, hashes, is_grading FROM global_sources WHERE course_id = ?",
             (course_id,)
         )
         rows = cursor.fetchall()
@@ -165,7 +261,8 @@ class Storage:
         for r in rows:
             try:
                 hashes = set(json.loads(r[1]))
-                result.append({"filename": r[0], "hashes": hashes, "source_type": "global"})
+                is_grading = r[2] if len(r) > 2 else 0
+                result.append({"filename": r[0], "hashes": hashes, "source_type": "global", "is_grading": is_grading})
             except json.JSONDecodeError:
                 logger.warning(f"Invalid JSON for global source {r[0]}")
         
