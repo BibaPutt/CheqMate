@@ -5,15 +5,18 @@ defined('MOODLE_INTERNAL') || die();
 global $CFG;
 require_once($CFG->dirroot . '/mod/assign/locallib.php');
 
-class assign_submission_cheqmate extends assign_submission_plugin {
+class assign_submission_cheqmate extends assign_submission_plugin
+{
 
-    public function get_name() {
+    public function get_name()
+    {
         return get_string('pluginname', 'assignsubmission_cheqmate');
     }
 
-    public function get_settings(\MoodleQuickForm $mform) {
+    public function get_settings(\MoodleQuickForm $mform)
+    {
         global $DB;
-        
+
         // Auto-patch Moodle DB to add auto_grade_mode and grading_section_tag columns if not exists
         $dbman = $DB->get_manager();
         $table_ac = new xmldb_table('assignsubmission_cheqmate');
@@ -34,7 +37,7 @@ class assign_submission_cheqmate extends assign_submission_plugin {
 
         $settings = null;
         $assignment_id = 0;
-        
+
         // Safely get assignment instance (may throw error for NEW assignments)
         try {
             $instance = $this->assignment->get_instance();
@@ -47,7 +50,7 @@ class assign_submission_cheqmate extends assign_submission_plugin {
         } catch (TypeError $e) {
             $instance = null;
         }
-        
+
         // NOTE: We do NOT add our own "Enable" checkbox - Moodle provides one automatically
         // for submission plugins (the "CheqMate Plagiarism Checker" checkbox)
 
@@ -88,6 +91,11 @@ class assign_submission_cheqmate extends assign_submission_plugin {
         $mform->setDefault('assignsubmission_cheqmate_auto_grading_enabled', ($settings && isset($settings->auto_grading_enabled)) ? $settings->auto_grading_enabled : 0);
         $mform->hideIf('assignsubmission_cheqmate_auto_grading_enabled', 'assignsubmission_cheqmate_enabled', 'notchecked');
 
+        $mform->addElement('advcheckbox', 'assignsubmission_cheqmate_auto_submit_grade', get_string('auto_submit_grade', 'assignsubmission_cheqmate'));
+        $mform->setDefault('assignsubmission_cheqmate_auto_submit_grade', ($settings && isset($settings->auto_submit_grade)) ? $settings->auto_submit_grade : 0);
+        $mform->addHelpButton('assignsubmission_cheqmate_auto_submit_grade', 'auto_submit_grade', 'assignsubmission_cheqmate');
+        $mform->hideIf('assignsubmission_cheqmate_auto_submit_grade', 'assignsubmission_cheqmate_auto_grading_enabled', 'notchecked');
+
         $mform->addElement('text', 'assignsubmission_cheqmate_criteria_name', get_string('criteria_name', 'assignsubmission_cheqmate'));
         $mform->setType('assignsubmission_cheqmate_criteria_name', PARAM_TEXT);
         $mform->setDefault('assignsubmission_cheqmate_criteria_name', ($settings && isset($settings->criteria_name)) ? $settings->criteria_name : 'Punctuality');
@@ -115,7 +123,7 @@ class assign_submission_cheqmate extends assign_submission_plugin {
 
         // --- Topic Knowledge & Lab Performance Auto-Grading Settings ---
         $mform->addElement('header', 'assignsubmission_cheqmate_grading_hdr', 'Auto-Grading Criteria Mapping');
-        
+
         $mode_options = [
             'disabled' => 'Disable Auto Grading (Rubric)',
             'full' => 'Full Auto Grade (Compare against whole manual)',
@@ -156,11 +164,13 @@ class assign_submission_cheqmate extends assign_submission_plugin {
         $mform->hideIf('assignsubmission_cheqmate_grading_strictness', 'assignsubmission_cheqmate_auto_grade_mode', 'eq', 'disabled');
     }
 
-    public function get_form_elements($submission, \MoodleQuickForm $mform, stdClass $data) {
+    public function get_form_elements($submission, \MoodleQuickForm $mform, stdClass $data)
+    {
         return false;
     }
 
-    public function save_settings(stdClass $data) {
+    public function save_settings(stdClass $data)
+    {
         global $DB;
 
         try {
@@ -186,14 +196,15 @@ class assign_submission_cheqmate extends assign_submission_plugin {
 
         // Auto-grading settings
         $record->auto_grading_enabled = !empty($data->assignsubmission_cheqmate_auto_grading_enabled) ? 1 : 0;
+        $record->auto_submit_grade = !empty($data->assignsubmission_cheqmate_auto_submit_grade) ? 1 : 0;
         $record->criteria_name = isset($data->assignsubmission_cheqmate_criteria_name) ? $data->assignsubmission_cheqmate_criteria_name : 'Punctuality';
-        $record->deduction_amount = isset($data->assignsubmission_cheqmate_deduction_amount) ? (float)$data->assignsubmission_cheqmate_deduction_amount : 0.1;
-        $record->deduction_interval = isset($data->assignsubmission_cheqmate_deduction_interval) ? (int)$data->assignsubmission_cheqmate_deduction_interval : 1;
-        $record->start_deducting_after = isset($data->assignsubmission_cheqmate_start_deducting_after) ? (int)$data->assignsubmission_cheqmate_start_deducting_after : 3;
-        $record->minimum_mark = isset($data->assignsubmission_cheqmate_minimum_mark) ? (float)$data->assignsubmission_cheqmate_minimum_mark : 1.0;
+        $record->deduction_amount = isset($data->assignsubmission_cheqmate_deduction_amount) ? (float) $data->assignsubmission_cheqmate_deduction_amount : 0.1;
+        $record->deduction_interval = isset($data->assignsubmission_cheqmate_deduction_interval) ? (int) $data->assignsubmission_cheqmate_deduction_interval : 1;
+        $record->start_deducting_after = isset($data->assignsubmission_cheqmate_start_deducting_after) ? (int) $data->assignsubmission_cheqmate_start_deducting_after : 3;
+        $record->minimum_mark = isset($data->assignsubmission_cheqmate_minimum_mark) ? (float) $data->assignsubmission_cheqmate_minimum_mark : 1.0;
         $record->auto_grade_mode = isset($data->assignsubmission_cheqmate_auto_grade_mode) ? $data->assignsubmission_cheqmate_auto_grade_mode : 'disabled';
         $record->grading_section_tag = isset($data->assignsubmission_cheqmate_grading_section_tag) ? $data->assignsubmission_cheqmate_grading_section_tag : '';
-        $record->grading_strictness = isset($data->assignsubmission_cheqmate_grading_strictness) ? (int)$data->assignsubmission_cheqmate_grading_strictness : 50;
+        $record->grading_strictness = isset($data->assignsubmission_cheqmate_grading_strictness) ? (int) $data->assignsubmission_cheqmate_grading_strictness : 50;
 
         // Auto-patch Moodle DB if columns don't exist (in case plugin upgrade wasn't clicked in admin)
         $dbman = $DB->get_manager();
@@ -208,7 +219,8 @@ class assign_submission_cheqmate extends assign_submission_plugin {
                 new xmldb_field('minimum_mark', XMLDB_TYPE_NUMBER, '10, 2', null, XMLDB_NOTNULL, null, '1.00'),
                 new xmldb_field('auto_grade_mode', XMLDB_TYPE_CHAR, '50', null, XMLDB_NOTNULL, null, 'disabled'),
                 new xmldb_field('grading_section_tag', XMLDB_TYPE_CHAR, '255', null, null, null, null),
-                new xmldb_field('grading_strictness', XMLDB_TYPE_INTEGER, '3', null, XMLDB_NOTNULL, null, '50')
+                new xmldb_field('grading_strictness', XMLDB_TYPE_INTEGER, '3', null, XMLDB_NOTNULL, null, '50'),
+                new xmldb_field('auto_submit_grade', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0')
             ];
             foreach ($fields_to_add as $field) {
                 if (!$dbman->field_exists($table, $field)) {
@@ -231,9 +243,10 @@ class assign_submission_cheqmate extends assign_submission_plugin {
      * Validate the submission form.
      * Prevents submission if no files are uploaded and the plugin is enabled.
      */
-    public function validate_submission_form(stdClass $submission, stdClass $data) {
+    public function validate_submission_form(stdClass $submission, stdClass $data)
+    {
         $errors = array();
-        
+
         if (!$this->is_enabled()) {
             return $errors;
         }
@@ -244,10 +257,10 @@ class assign_submission_cheqmate extends assign_submission_plugin {
             return $errors;
         }
         $context = context_module::instance($cm->id);
-        
+
         // Check for existing files in the submission area
         $files = $fs->get_area_files($context->id, 'assignsubmission_file', 'submission_files', $submission->id, 'sortorder', false);
-        
+
         $has_real_files = false;
         foreach ($files as $file) {
             if (!$file->is_directory() && $file->get_filesize() > 0) {
@@ -287,7 +300,8 @@ class assign_submission_cheqmate extends assign_submission_plugin {
         return $errors;
     }
 
-    public function is_enabled() {
+    public function is_enabled()
+    {
         global $DB;
         $this->check_db_schema();
         try {
@@ -304,7 +318,8 @@ class assign_submission_cheqmate extends assign_submission_plugin {
         }
     }
 
-    private function check_db_schema() {
+    private function check_db_schema()
+    {
         global $DB;
         $dbman = $DB->get_manager();
         $table_res = new xmldb_table('assignsub_cheqmate_res');
@@ -316,7 +331,8 @@ class assign_submission_cheqmate extends assign_submission_plugin {
         }
     }
 
-    private function get_plugin_settings() {
+    private function get_plugin_settings()
+    {
         global $DB;
         try {
             $instance = $this->assignment->get_instance();
@@ -331,218 +347,292 @@ class assign_submission_cheqmate extends assign_submission_plugin {
         }
     }
 
-    private function get_skip_patterns() {
+    private function get_skip_patterns()
+    {
         global $DB;
         $courseid = $this->assignment->get_course()->id;
         $settings = $DB->get_record('cheqmate_course_settings', ['courseid' => $courseid]);
-        
+
         if ($settings && !empty($settings->skip_patterns)) {
             return array_map('trim', explode(',', $settings->skip_patterns));
         }
         return [];
     }
 
-    public function submit_for_grading($submission) {
+    public function submit_for_grading($submission)
+    {
+        global $DB;
+        $data = new stdClass();
+        $data->cheqmate_final_submit = true;
+        $this->save($submission, $data);
+        $DB->set_field('assignsub_cheqmate_res', 'final_submitted', 1, ['submission' => $submission->id]);
         return true;
     }
 
-    public function save(stdClass $submission, stdClass $data) {
-    global $DB, $CFG;
-    $this->check_db_schema();
+    public function run_analysis(stdClass $submission, stdClass $data = null)
+    {
+        global $DB, $CFG;
 
-    if (!$this->is_enabled()) {
-        return true;
-    }
-
-    $settings = $this->get_plugin_settings();
-    if (!$settings || !$settings->enabled) {
-        return true;
-    }
-
-    $fs = get_file_storage();
-    $context = context_module::instance($this->assignment->get_course_module()->id);
-    $files = $fs->get_area_files($context->id, 'assignsubmission_file', 'submission_files', $submission->id, 'sortorder', false);
-    
-    if (empty($files) && (isset($data->files_filemanager) || isset($data->assignsubmission_file_filemanager))) {
-        $draftitemid = isset($data->files_filemanager) ? $data->files_filemanager : $data->assignsubmission_file_filemanager;
-        $usercontext = context_user::instance($submission->userid);
-        $files = $fs->get_area_files($usercontext->id, 'user', 'draft', $draftitemid, 'sortorder', false);
-    }
-
-    if (empty($files)) {
-        throw new moodle_exception('error_no_files', 'assignsubmission_cheqmate');
-    }
-
-    $tempdir = make_temp_directory('assignsubmission_cheqmate');
-    $courseid = $this->assignment->get_course()->id;
-    $assignmentid = $this->assignment->get_instance()->id;
-    $skip_patterns = $this->get_skip_patterns();
-
-    foreach ($files as $file) {
-
-        if ($file->is_directory() || $file->get_filesize() == 0) {
-            continue;
+        $settings = $this->get_plugin_settings();
+        if (!$settings || !$settings->enabled) {
+            return false;
         }
 
-        $contenthash = $file->get_contenthash();
-        $filename = $file->get_filename();
-        $tempfilepath = $tempdir . '/' . $contenthash . '_' . $filename;
-        $file->copy_content_to($tempfilepath);
+        $fs = get_file_storage();
+        $context = context_module::instance($this->assignment->get_course_module()->id);
+        $files = $fs->get_area_files($context->id, 'assignsubmission_file', 'submission_files', $submission->id, 'sortorder', false);
 
-        $normalized_temp = str_replace('\\', '/', $tempfilepath);
-        $normalized_dataroot = str_replace('\\', '/', $CFG->dataroot);
-        $filecontent = $file->get_content();
-        $base64_content = base64_encode($filecontent);
-
-        $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://localhost:8000';
-        $endpoint = $api_url . '/analyze';
-
-        $payload = json_encode([
-            'file_path' => $normalized_temp,
-            'dataroot' => $normalized_dataroot,
-            'submission_id' => $submission->id,
-            'context_id' => $context->id,
-            'assignment_id' => $assignmentid,
-            'course_id' => $courseid,
-            'check_global_source' => (bool) $settings->check_global_source,
-            'enable_peer_comparison' => (bool) $settings->enable_peer_comparison,
-            'skip_patterns' => $skip_patterns,
-            'file_content' => $base64_content,
-            'section_tag' => ($settings->auto_grade_mode == 'specific') ? $settings->grading_section_tag : null,
-            'grading_strictness' => isset($settings->grading_strictness) ? (int)$settings->grading_strictness : 50
-        ]);
-
-        $ch = curl_init($endpoint);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Content-Type: application/json',
-            'Content-Length: ' . strlen($payload)
-        ]);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 120);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
-
-        $response = curl_exec($ch);
-        $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($httpcode === 0 || $httpcode >= 500) {
-            @unlink($tempfilepath);
-            throw new moodle_exception('error_connection', 'assignsubmission_cheqmate');
+        if (empty($files) && $data && (isset($data->files_filemanager) || isset($data->assignsubmission_file_filemanager))) {
+            $draftitemid = isset($data->files_filemanager) ? $data->files_filemanager : $data->assignsubmission_file_filemanager;
+            $usercontext = context_user::instance($submission->userid);
+            $files = $fs->get_area_files($usercontext->id, 'user', 'draft', $draftitemid, 'sortorder', false);
         }
 
-        if ($httpcode !== 200) {
-            @unlink($tempfilepath);
-            continue;
+        if (empty($files)) {
+            return false;
         }
 
-        $result = json_decode($response, true);
+        $tempdir = make_temp_directory('assignsubmission_cheqmate');
+        $courseid = $this->assignment->get_course()->id;
+        $assignmentid = $this->assignment->get_instance()->id;
+        $skip_patterns = $this->get_skip_patterns();
 
-        if (isset($result['status']) && $result['status'] == 'error') {
-            @unlink($tempfilepath);
-            throw new moodle_exception(
-                'error_analysis',
-                'assignsubmission_cheqmate',
-                '',
-                $result['message'] ?? 'Unknown error'
-            );
-        }
-
-        // We no longer overwrite the original file to append the report. 
-        // The Advanced Report is generated on-the-fly via advanced_report.php
-        @unlink($tempfilepath);
-
-        $plag_score = $result['plagiarism_score'] ?? 0;
-        $ai_score = $result['ai_probability'] ?? 0;
-        $threshold = $settings->plagiarism_threshold;
-
-        // --- Plagiarism Blocking & Notification ---
-        if (
-            isset($result['status']) &&
-            $result['status'] == 'processed' &&
-            $plag_score > $threshold
-        ) {
-            // --- Teacher Notification ---
-            $context = $this->assignment->get_context();
-            // Find users who can grade (teachers/admins / Course Owners / Managers)
-            // Using moodle/course:update targets users with manager/admin privileges or course editors.
-            $teachers = get_users_by_capability($context, 'moodle/course:update', 'u.id, u.firstname, u.lastname, u.email, u.lang', '', '', '', '', '', false, true);
-            
-            // Fallback to graders if no course owners found
-            if (empty($teachers)) {
-                $teachers = get_users_by_capability($context, 'mod/assign:grade', 'u.id, u.firstname, u.lastname, u.email, u.lang', '', '', '', '', '', false, true);
-            }
-            
-            if ($teachers) {
-                $student = $DB->get_record('user', ['id' => $submission->userid], '*', IGNORE_MISSING);
-                $student_name = $student ? fullname($student) : 'A student';
-                $assignment_name = $this->assignment->get_instance()->name;
-                
-                foreach ($teachers as $teacher) {
-                    $eventdata = new \core\message\message();
-                    $eventdata->courseid          = $this->assignment->get_course()->id;
-                    $eventdata->component         = 'assignsubmission_cheqmate';
-                    $eventdata->name              = 'plagiarism_alert';
-                    $eventdata->userfrom          = \core_user::get_noreply_user();
-                    $eventdata->userto            = $teacher;
-                    $eventdata->subject           = "Plagiarism Alert: {$student_name}";
-                    $eventdata->fullmessage       = "Hello {$teacher->firstname},\n\nA submission for the assignment '{$assignment_name}' by {$student_name} has been automatically blocked by the CheqMate system.\n\nThe detected plagiarism score was {$plag_score}%, which exceeds your configured threshold of {$threshold}%.\n\nPlease review the submission dashboard for more details.";
-                    $eventdata->fullmessageformat = FORMAT_PLAIN;
-                    $eventdata->fullmessagehtml   = "<p>Hello {$teacher->firstname},</p><p>A submission for the assignment <b>'{$assignment_name}'</b> by <b>{$student_name}</b> has been automatically blocked by the CheqMate system.</p><p>The detected plagiarism score was <b>{$plag_score}%</b>, which exceeds your configured threshold of {$threshold}%.</p><p>Please review the submission dashboard for more details.</p>";
-                    $eventdata->smallmessage      = "Plagiarism Alert: {$student_name} exceeded threshold ({$plag_score}%).";
-                    $eventdata->notification      = 1;
-                    
-                    message_send($eventdata);
+        // Self-heal/ensure grading manual PDF exists on engine filesystem
+        $grading_manual = $DB->get_record('cheqmate_global_source', ['courseid' => $courseid, 'is_grading' => 1]);
+        if ($grading_manual) {
+            $engine_manual_name = $courseid . '_' . $grading_manual->filename;
+            $engine_manual_path = __DIR__ . '/../cheqmate_engine/global_sources/' . $engine_manual_name;
+            if (!file_exists($engine_manual_path)) {
+                $fs_manual = get_file_storage();
+                $files_manual = $fs_manual->get_area_files(context_course::instance($courseid)->id, 'assignsubmission_cheqmate', 'global_source', $grading_manual->id, 'timemodified', false);
+                if ($files_manual) {
+                    $file_manual = reset($files_manual);
+                    $engine_dir = dirname($engine_manual_path);
+                    if (!is_dir($engine_dir)) {
+                        @mkdir($engine_dir, 0777, true);
+                    }
+                    $file_manual->copy_content_to($engine_manual_path);
                 }
             }
-            // --- End Teacher Notification ---
-
-            // Delete fingerprint to avoid self-match on re-upload
-            $delete_endpoint = $api_url . '/fingerprint/' . $submission->id;
-            $dch = curl_init($delete_endpoint);
-            curl_setopt($dch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($dch, CURLOPT_CUSTOMREQUEST, 'DELETE');
-            curl_setopt($dch, CURLOPT_TIMEOUT, 10);
-            curl_exec($dch);
-            curl_close($dch);
-
-            // Ensure no stale result remains
-            $DB->delete_records('assignsub_cheqmate_res', ['submission' => $submission->id]);
-
-            $error_data = new stdClass();
-            $error_data->score = $plag_score;
-            $error_data->ai = $ai_score;
-            $error_data->details = $this->format_match_details($result['details'] ?? []);
-
-            throw new moodle_exception(
-                'submission_blocked_detailed',
-                'assignsubmission_cheqmate',
-                '',
-                $error_data
-            );
         }
 
-        // --- Save CheqMate Result (Only if not blocked) ---
-        $record = new stdClass();
-        $record->submission = $submission->id;
-        $record->filehash = $contenthash;
-        $record->plagiarism_score = $plag_score;
-        $record->ai_probability = $ai_score;
-        $record->report_path = '';
-        $record->json_result = json_encode($result);
-        $record->status = $result['status'] ?? 'processed';
-        $record->timecreated = time();
-        $record->final_submitted = 0;
+        $result = null;
+        $contenthash = '';
+        foreach ($files as $file) {
+            if ($file->is_directory() || $file->get_filesize() == 0) {
+                continue;
+            }
 
-        if ($old = $DB->get_record('assignsub_cheqmate_res', ['submission' => $submission->id])) {
-            $record->id = $old->id;
-            $DB->update_record('assignsub_cheqmate_res', $record);
-        } else {
-            $DB->insert_record('assignsub_cheqmate_res', $record);
+            $contenthash = $file->get_contenthash();
+            $filename = $file->get_filename();
+            $tempfilepath = $tempdir . '/' . $contenthash . '_' . $filename;
+            $file->copy_content_to($tempfilepath);
+
+            $normalized_temp = str_replace('\\', '/', $tempfilepath);
+            $normalized_dataroot = str_replace('\\', '/', $CFG->dataroot);
+            $filecontent = $file->get_content();
+            $base64_content = base64_encode($filecontent);
+
+            $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://localhost:8000';
+            $endpoint = $api_url . '/analyze';
+
+            $payload = json_encode([
+                'file_path' => $normalized_temp,
+                'dataroot' => $normalized_dataroot,
+                'submission_id' => $submission->id,
+                'context_id' => $context->id,
+                'assignment_id' => $assignmentid,
+                'course_id' => $courseid,
+                'check_global_source' => (bool) $settings->check_global_source,
+                'enable_peer_comparison' => (bool) $settings->enable_peer_comparison,
+                'skip_patterns' => $skip_patterns,
+                'file_content' => $base64_content,
+                'section_tag' => ($settings->auto_grade_mode == 'specific') ? $settings->grading_section_tag : null,
+                'grading_strictness' => isset($settings->grading_strictness) ? (int) $settings->grading_strictness : 50
+            ]);
+
+            $ch = curl_init($endpoint);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                'Content-Length: ' . strlen($payload)
+            ]);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 120);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+
+            $response = curl_exec($ch);
+            $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            @unlink($tempfilepath);
+
+            if ($httpcode === 0 || $httpcode >= 500) {
+                throw new moodle_exception('error_connection', 'assignsubmission_cheqmate');
+            }
+
+            if ($httpcode !== 200) {
+                continue;
+            }
+
+            $result = json_decode($response, true);
+            if (isset($result['status']) && $result['status'] == 'error') {
+                throw new moodle_exception(
+                    'error_analysis',
+                    'assignsubmission_cheqmate',
+                    '',
+                    $result['message'] ?? 'Unknown error'
+                );
+            }
         }
 
-        if ($settings && !empty($settings->auto_grading_enabled)) {
+        if ($result) {
+            $plag_score = $result['plagiarism_score'] ?? 0;
+            $ai_score = $result['ai_probability'] ?? 0;
+            $threshold = $settings->plagiarism_threshold;
+
+            // --- Plagiarism Blocking & Notification ---
+            if ($plag_score > $threshold) {
+                $teachers = get_users_by_capability($context, 'moodle/course:update', 'u.id, u.firstname, u.lastname, u.email, u.lang', '', '', '', '', '', false, true);
+                if (empty($teachers)) {
+                    $teachers = get_users_by_capability($context, 'mod/assign:grade', 'u.id, u.firstname, u.lastname, u.email, u.lang', '', '', '', '', '', false, true);
+                }
+
+                if ($teachers) {
+                    $student = $DB->get_record('user', ['id' => $submission->userid], '*', IGNORE_MISSING);
+                    $student_name = $student ? fullname($student) : 'A student';
+                    $assignment_name = $this->assignment->get_instance()->name;
+
+                    foreach ($teachers as $teacher) {
+                        $eventdata = new \core\message\message();
+                        $eventdata->courseid = $this->assignment->get_course()->id;
+                        $eventdata->component = 'assignsubmission_cheqmate';
+                        $eventdata->name = 'plagiarism_alert';
+                        $eventdata->userfrom = \core_user::get_noreply_user();
+                        $eventdata->userto = $teacher;
+                        $eventdata->subject = "Plagiarism Alert: {$student_name}";
+                        $eventdata->fullmessage = "Hello {$teacher->firstname},\n\nA submission for the assignment '{$assignment_name}' by {$student_name} has been automatically blocked by the CheqMate system.\n\nThe detected plagiarism score was {$plag_score}%, which exceeds your configured threshold of {$threshold}%.\n\nPlease review the submission dashboard for more details.";
+                        $eventdata->fullmessageformat = FORMAT_PLAIN;
+                        $eventdata->fullmessagehtml = "<p>Hello {$teacher->firstname},</p><p>A submission for the assignment <b>'{$assignment_name}'</b> by <b>{$student_name}</b> has been automatically blocked by the CheqMate system.</p><p>The detected plagiarism score was <b>{$plag_score}%</b>, which exceeds your configured threshold of {$threshold}%.</p><p>Please review the submission dashboard for more details.</p>";
+                        $eventdata->smallmessage = "Plagiarism Alert: {$student_name} exceeded threshold ({$plag_score}%).";
+                        $eventdata->notification = 1;
+                        message_send($eventdata);
+                    }
+                }
+
+                $delete_endpoint = $api_url . '/fingerprint/' . $submission->id;
+                $dch = curl_init($delete_endpoint);
+                curl_setopt($dch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($dch, CURLOPT_CUSTOMREQUEST, 'DELETE');
+                curl_setopt($dch, CURLOPT_TIMEOUT, 10);
+                curl_exec($dch);
+                curl_close($dch);
+
+                $DB->delete_records('assignsub_cheqmate_res', ['submission' => $submission->id]);
+
+                $error_data = new stdClass();
+                $error_data->score = $plag_score;
+                $error_data->ai = $ai_score;
+                $error_data->details = $this->format_match_details($result['details'] ?? []);
+
+                throw new moodle_exception(
+                    'submission_blocked_detailed',
+                    'assignsubmission_cheqmate',
+                    '',
+                    $error_data
+                );
+            }
+
+            // --- Save CheqMate Result ---
+            $record = new stdClass();
+            $record->submission = $submission->id;
+            $record->filehash = $contenthash;
+            $record->plagiarism_score = $plag_score;
+            $record->ai_probability = $ai_score;
+            $record->report_path = '';
+            $record->json_result = json_encode($result);
+            $record->status = $result['status'] ?? 'processed';
+            $record->timecreated = time();
+            $record->final_submitted = 0;
+
+            if ($old = $DB->get_record('assignsub_cheqmate_res', ['submission' => $submission->id])) {
+                $record->id = $old->id;
+                $DB->update_record('assignsub_cheqmate_res', $record);
+            } else {
+                $DB->insert_record('assignsub_cheqmate_res', $record);
+            }
+            return $result;
+        }
+        return false;
+    }
+
+    public function save(stdClass $submission, stdClass $data)
+    {
+        global $DB, $CFG;
+        $this->check_db_schema();
+
+        if (!$this->is_enabled()) {
+            return true;
+        }
+
+        $settings = $this->get_plugin_settings();
+        if (!$settings || !$settings->enabled) {
+            return true;
+        }
+
+        // Load existing analysis if this is the final submit, to avoid re-calling engine
+        $result = null;
+        if (!empty($data->cheqmate_final_submit)) {
+            $res = $DB->get_record('assignsub_cheqmate_res', ['submission' => $submission->id]);
+            if ($res) {
+                $result = json_decode($res->json_result, true);
+            }
+        }
+
+        if (!$result) {
+            $result = $this->run_analysis($submission, $data);
+            if (!$result) {
+                $res = $DB->get_record('assignsub_cheqmate_res', ['submission' => $submission->id]);
+                if ($res) {
+                    $result = json_decode($res->json_result, true);
+                }
+            }
+        }
+
+        $should_submit_grade = false;
+        if (!empty($data->cheqmate_final_submit)) {
+            $should_submit_grade = true;
+        }
+
+        if (!$should_submit_grade) {
+            // Force the submission status in Moodle to draft
+            $submission->status = ASSIGN_SUBMISSION_STATUS_DRAFT;
+
+            // Clear any rubric fillings & grades to keep the draft state clean
+            $grade = $DB->get_record('assign_grades', [
+                'assignment' => $this->assignment->get_instance()->id,
+                'userid' => $submission->userid,
+                'attemptnumber' => $submission->attemptnumber
+            ]);
+            if ($grade) {
+                $instances = $DB->get_records('grading_instances', ['itemid' => $grade->id]);
+                foreach ($instances as $instance) {
+                    $DB->delete_records('gradingform_rubric_fillings', ['instanceid' => $instance->id]);
+                    $DB->delete_records('grading_instances', ['id' => $instance->id]);
+                }
+                $grade->grade = -1.0;
+                $grade->grader = -1;
+                $grade->timemodified = time();
+                $DB->update_record('assign_grades', $grade);
+                
+                // Propagate the cleared grade to Moodle Gradebook
+                $this->assignment->update_grade($grade);
+            }
+        }
+
+        if ($result && $should_submit_grade) {
+            $DB->set_field('assignsub_cheqmate_res', 'final_submitted', 1, ['submission' => $submission->id]);
             $plag_score = $result['plagiarism_score'] ?? 0;
             $ai_score = $result['ai_probability'] ?? 0;
             $combined = max($plag_score, $ai_score);
@@ -558,20 +648,20 @@ class assign_submission_cheqmate extends assign_submission_plugin {
                     $student = $DB->get_record('user', ['id' => $submission->userid], '*', IGNORE_MISSING);
                     $student_name = $student ? fullname($student) : 'A student';
                     $assignment_name = $this->assignment->get_instance()->name;
-                    
+
                     foreach ($teachers as $teacher) {
                         $eventdata = new \core\message\message();
-                        $eventdata->courseid          = $this->assignment->get_course()->id;
-                        $eventdata->component         = 'assignsubmission_cheqmate';
-                        $eventdata->name              = 'plagiarism_alert';
-                        $eventdata->userfrom          = \core_user::get_noreply_user();
-                        $eventdata->userto            = $teacher;
-                        $eventdata->subject           = "Auto-Grading Suspended: {$student_name}";
-                        $eventdata->fullmessage       = "Hello {$teacher->firstname},\n\nA submission for the assignment '{$assignment_name}' by {$student_name} was not auto-graded because the combined similarity/AI score was {$combined}%, which exceeds the 80% threshold.\n\nPlease review and grade this submission manually.";
+                        $eventdata->courseid = $this->assignment->get_course()->id;
+                        $eventdata->component = 'assignsubmission_cheqmate';
+                        $eventdata->name = 'plagiarism_alert';
+                        $eventdata->userfrom = \core_user::get_noreply_user();
+                        $eventdata->userto = $teacher;
+                        $eventdata->subject = "Auto-Grading Suspended: {$student_name}";
+                        $eventdata->fullmessage = "Hello {$teacher->firstname},\n\nA submission for the assignment '{$assignment_name}' by {$student_name} was not auto-graded because the combined similarity/AI score was {$combined}%, which exceeds the 80% threshold.\n\nPlease review and grade this submission manually.";
                         $eventdata->fullmessageformat = FORMAT_PLAIN;
-                        $eventdata->fullmessagehtml   = "<p>Hello {$teacher->firstname},</p><p>A submission for the assignment <b>'{$assignment_name}'</b> by <b>{$student_name}</b> was not auto-graded because the combined similarity/AI score was <b>{$combined}%</b>, which exceeds the 80% threshold.</p><p>Please review and grade this submission manually.</p>";
-                        $eventdata->smallmessage      = "Auto-grading suspended for {$student_name} due to high similarity/AI score ({$combined}%).";
-                        $eventdata->notification      = 1;
+                        $eventdata->fullmessagehtml = "<p>Hello {$teacher->firstname},</p><p>A submission for the assignment <b>'{$assignment_name}'</b> by <b>{$student_name}</b> was not auto-graded because the combined similarity/AI score was <b>{$combined}%</b>, which exceeds the 80% threshold.</p><p>Please review and grade this submission manually.</p>";
+                        $eventdata->smallmessage = "Auto-grading suspended for {$student_name} due to high similarity/AI score ({$combined}%).";
+                        $eventdata->notification = 1;
                         message_send($eventdata);
                     }
                 }
@@ -594,9 +684,12 @@ class assign_submission_cheqmate extends assign_submission_plugin {
                             $instance->definitionid = $definition->id;
                             $instance->raterid = $submission->userid;
                             $instance->itemid = $grade->id;
-                            $instance->status = 1;
+                            $instance->status = $should_submit_grade ? 1 : 0;
                             $instance->timemodified = time();
                             $instance->id = $DB->insert_record('grading_instances', $instance);
+                        } else {
+                            $instance_status = $should_submit_grade ? 1 : 0;
+                            $DB->set_field('grading_instances', 'status', $instance_status, ['id' => $instance->id]);
                         }
 
                         $criteria_to_grade = [];
@@ -606,7 +699,7 @@ class assign_submission_cheqmate extends assign_submission_plugin {
                         $clean_criteria_name = preg_replace('/[^a-zA-Z0-9]/', '', $punctuality_criteria_name);
                         $sql_crit = "SELECT id, description FROM {gradingform_rubric_criteria} WHERE definitionid = ? AND (LOWER(description) LIKE ? OR LOWER(description) LIKE ?)";
                         $criteria_records = $DB->get_records_sql($sql_crit, [
-                            $definition->id, 
+                            $definition->id,
                             '%' . strtolower($punctuality_criteria_name) . '%',
                             '%' . strtolower($clean_criteria_name) . '%'
                         ]);
@@ -615,7 +708,7 @@ class assign_submission_cheqmate extends assign_submission_plugin {
                             $sql_crit_fallback = "SELECT id, description FROM {gradingform_rubric_criteria} WHERE definitionid = ? AND (LOWER(description) LIKE '%punctual%' OR LOWER(description) LIKE '%late%' OR LOWER(description) LIKE '%submission%')";
                             $criteria_records = $DB->get_records_sql($sql_crit_fallback, [$definition->id]);
                         }
-                        
+
                         if ($criteria_records) {
                             $criteria = reset($criteria_records);
                             $sql_levels = "SELECT id, score FROM {gradingform_rubric_levels} WHERE criterionid = ? ORDER BY score DESC";
@@ -637,7 +730,7 @@ class assign_submission_cheqmate extends assign_submission_plugin {
                                         $intervals_late = floor(($days_late - $grace_period) / ($settings->deduction_interval ?: 1)) + 1;
                                         $deduction = $intervals_late * $settings->deduction_amount;
                                         $score = $max_score - $deduction;
-                                        
+
                                         $min_bound = isset($settings->minimum_mark) ? $settings->minimum_mark : 1.0;
                                         if ($score < $min_bound) {
                                             $score = $min_bound;
@@ -739,52 +832,86 @@ class assign_submission_cheqmate extends assign_submission_plugin {
                                 }
                             }
                         }
+
+                        // Auto-submit grade if toggle is enabled and submission is final (not draft)
+                        if ($settings && !empty($settings->auto_submit_grade) && $should_submit_grade) {
+                            $DB->set_field('grading_instances', 'status', 1, ['id' => $instance->id]);
+
+                            $sql_grade_calc = "SELECT SUM(gl.score) 
+                                               FROM {gradingform_rubric_fillings} gf
+                                               JOIN {gradingform_rubric_levels} gl ON gf.levelid = gl.id
+                                               WHERE gf.instanceid = ?";
+                            $rubric_sum = $DB->get_field_sql($sql_grade_calc, [$instance->id]);
+                            if ($rubric_sum !== false && $rubric_sum >= 0) {
+                                $grade->grade = (float) $rubric_sum;
+                                $grade->grader = -1; // system/auto
+                                $grade->timemodified = time();
+                                $this->assignment->update_grade($grade);
+
+                                // Release marking workflow if enabled
+                                if ($this->assignment->get_instance()->markingworkflow) {
+                                    $flags = $this->assignment->get_user_flags($submission->userid, true);
+                                    $flags->workflowstate = 'released';
+                                    $this->assignment->update_user_flags($flags);
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
         // --- End Auto-Grading Logic ---
-    }
 
-    $submission->status = 'draft';
-    return true;
-}
+        return true;
+    }
 
 
     /**
      * Called when a submission is removed/deleted by the student.
      * Cleans up plagiarism data to prevent ghost records and self-plagiarism on re-upload.
      */
-    public function remove(stdClass $submission) {
+    public function remove(stdClass $submission)
+    {
         global $DB;
-        
+
         // Delete from local Moodle DB
         $DB->delete_records('assignsub_cheqmate_res', ['submission' => $submission->id]);
-        
+
         // Call engine to delete fingerprint
         $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://localhost:8000';
         $endpoint = $api_url . '/fingerprint/' . $submission->id;
-        
+
         $ch = curl_init($endpoint);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
         curl_setopt($ch, CURLOPT_TIMEOUT, 10);
         curl_exec($ch);
         curl_close($ch);
-        
+
         return true;
     }
 
-    private function format_match_details($details) {
+    /**
+     * Called when a submission is reverted to draft by a teacher.
+     */
+    public function revert_to_draft(stdClass $submission)
+    {
         global $DB;
-        
+        $DB->set_field('assignsub_cheqmate_res', 'final_submitted', 0, ['submission' => $submission->id]);
+        return true;
+    }
+
+    private function format_match_details($details)
+    {
+        global $DB;
+
         $output = [];
         foreach ($details as $match) {
             if (isset($match['source_type']) && $match['source_type'] == 'global') {
                 $output[] = "Global: " . ($match['filename'] ?? 'Unknown') . " - " . round($match['score'], 2) . "%";
             } else if (isset($match['submission_id'])) {
                 $peer_user = $DB->get_record_sql(
-                    "SELECT u.* FROM {user} u JOIN {assign_submission} s ON s.userid = u.id WHERE s.id = ?", 
+                    "SELECT u.* FROM {user} u JOIN {assign_submission} s ON s.userid = u.id WHERE s.id = ?",
                     [$match['submission_id']]
                 );
                 $name = $peer_user ? fullname($peer_user) : "Unknown";
@@ -797,11 +924,12 @@ class assign_submission_cheqmate extends assign_submission_plugin {
     /**
      * Display the plagiarism results in the submission status table
      */
-    public function view_summary(stdClass $submission, & $showviewlink) {
+    public function view_summary(stdClass $submission, &$showviewlink)
+    {
         global $DB, $USER;
 
         $showviewlink = false;
-        
+
         $this->check_db_schema();
 
         $settings = $this->get_plugin_settings();
@@ -814,9 +942,9 @@ class assign_submission_cheqmate extends assign_submission_plugin {
         }
 
         $record = $DB->get_record('assignsub_cheqmate_res', ['submission' => $submission->id], '*', IGNORE_MULTIPLE);
-        
+
         // Force status back to draft if not final submitted
-        if ($record && empty($record->final_submitted) && $submission->status == ASSIGN_SUBMISSION_STATUS_SUBMITTED) {
+        if ($record && empty($record->final_submitted) && isset($submission->status) && $submission->status == ASSIGN_SUBMISSION_STATUS_SUBMITTED) {
             $submission->status = ASSIGN_SUBMISSION_STATUS_DRAFT;
             $DB->update_record('assign_submission', $submission);
         }
@@ -825,13 +953,13 @@ class assign_submission_cheqmate extends assign_submission_plugin {
             if ($record->status == 'error') {
                 return '<span class="text-warning">CheqMate: Error</span>';
             }
-            
+
             $plag_class = $record->plagiarism_score > 50 ? 'text-danger' : ($record->plagiarism_score > 25 ? 'text-warning' : 'text-success');
             $ai_class = $record->ai_probability > 50 ? 'text-danger' : ($record->ai_probability > 25 ? 'text-warning' : 'text-success');
-            
+
             $output = 'Plagiarism: <strong class="' . $plag_class . '">' . round($record->plagiarism_score, 1) . '%</strong> | ' .
-                      'AI: <strong class="' . $ai_class . '">' . round($record->ai_probability, 1) . '%</strong>';
-            
+                'AI: <strong class="' . $ai_class . '">' . round($record->ai_probability, 1) . '%</strong>';
+
             // Add match details as bullet points
             $result_json = json_decode($record->json_result, true);
             if (!empty($result_json['details'])) {
@@ -841,7 +969,7 @@ class assign_submission_cheqmate extends assign_submission_plugin {
                         $output .= '<li>Global: ' . htmlspecialchars($match['filename'] ?? 'doc') . ' - ' . round($match['score'], 0) . '%</li>';
                     } else if (isset($match['submission_id'])) {
                         $peer_user = $DB->get_record_sql(
-                            "SELECT u.* FROM {user} u JOIN {assign_submission} s ON s.userid = u.id WHERE s.id = ?", 
+                            "SELECT u.* FROM {user} u JOIN {assign_submission} s ON s.userid = u.id WHERE s.id = ?",
                             [$match['submission_id']]
                         );
                         $name = $peer_user ? fullname($peer_user) : "ID:" . $match['submission_id'];
@@ -849,20 +977,90 @@ class assign_submission_cheqmate extends assign_submission_plugin {
                     }
                 }
                 $output .= '</ul>';
-                
-                $url = new moodle_url('/mod/assign/submission/cheqmate/advanced_report.php', ['id' => $submission->id]);
-                
-                if ($is_owner && $student_view) {
-                    $output .= '<div style="margin-top: 10px;">';
-                    $output .= '<iframe src="' . $url->out() . '" width="100%" height="450px" style="border: 1px solid #ddd; border-radius: 4px;"></iframe>';
-                    $output .= '</div>';
-                } else if ($is_teacher) {
-                    $output .= '<div style="margin-top: 8px;">';
-                    $output .= '<a href="' . $url->out() . '" target="_blank" class="btn btn-sm btn-secondary" style="font-size: 0.8em; padding: 2px 6px;">&#8942; View Advanced Report</a>';
-                    $output .= '</div>';
-                }
             }
-            
+
+            // Display the Grading Explanation Panel for teachers (moved outside details check)
+            if ($is_teacher) {
+                $output .= '<div class="card mt-2 mb-2" style="border: 1px solid #cce5ff; background-color: #f8f9fa; border-radius: 4px;">';
+                $output .= '  <div class="card-header" style="background-color: #e2e3e5; padding: 6px 12px; font-weight: bold; font-size: 0.9em; display: flex; justify-content: space-between; align-items: center;">';
+                $output .= '    <span><i class="fa fa-info-circle text-primary"></i> CheqMate Grading Explanation</span>';
+                $output .= '  </div>';
+                $output .= '  <div class="card-body" style="padding: 10px 12px; font-size: 0.85em; color: #333; line-height: 1.4;">';
+
+                $grading_details = isset($result_json['grading_details']) ? $result_json['grading_details'] : null;
+                $tk_score = isset($result_json['topic_knowledge_score']) ? $result_json['topic_knowledge_score'] : null;
+                $lp_score = isset($result_json['lab_performance_score']) ? $result_json['lab_performance_score'] : null;
+
+                // 1. Punctuality
+                $duedate = $this->assignment->get_instance()->duedate;
+                $timemodified = $submission->timemodified;
+                $output .= '<strong>1. Punctuality:</strong> ';
+                if ($duedate > 0 && $timemodified > $duedate) {
+                    $days_late = floor(($timemodified - $duedate) / 86400);
+                    $output .= 'Submitted ' . $days_late . ' day(s) late. Late deductions applied.';
+                } else {
+                    $output .= 'Submitted on time. Full marks.';
+                }
+                $output .= '<br/>';
+
+                // 2. Topic Knowledge
+                $output .= '<strong>2. Topic Knowledge:</strong> ';
+                if ($grading_details && isset($grading_details['topic_knowledge'])) {
+                    $tk_details = $grading_details['topic_knowledge'];
+                    $output .= 'Score: ' . ($tk_score !== null ? round($tk_score, 2) . '/3.0. ' : 'N/A. ');
+                    $output .= 'Coverage: ' . round($tk_details['containment'] * 100, 1) . '% (Required: ' . round($tk_details['coverage_threshold'] * 100, 1) . '% with strictness ' . $tk_details['strictness'] . '%).';
+                    if (!empty($tk_details['missing_sections'])) {
+                        $output .= ' <span class="text-danger" style="font-weight: bold;">Missing sections: ' . implode(', ', $tk_details['missing_sections']) . ' (deductions applied).</span>';
+                    }
+                } else {
+                    $output .= 'Score: ' . ($tk_score !== null ? round($tk_score, 2) . '/3.0. ' : 'N/A. ') . 'Check manual or click Actions -> Re-check Grades.';
+                }
+                $output .= '<br/>';
+
+                // 3. Lab Performance
+                $output .= '<strong>3. Lab Performance:</strong> ';
+                if ($grading_details && isset($grading_details['lab_performance'])) {
+                    $lp_details = $grading_details['lab_performance'];
+                    $output .= 'Score: ' . ($lp_score !== null ? round($lp_score, 2) . '/3.0. ' : 'N/A. ');
+                    $output .= 'Screenshots: ' . $lp_details['student_images'] . '/' . $lp_details['expected_images'] . ' found. ';
+                    $output .= 'Code Match: ' . round($lp_details['code_score'] * 100, 1) . '%. ';
+                    $output .= 'Steps Attempted: ' . round($lp_details['steps_score'] * 100, 1) . '%. ';
+                    if (isset($lp_details['penalty_factor']) && $lp_details['penalty_factor'] < 1.0) {
+                        $output .= ' <span class="text-danger" style="font-weight: bold;">Plagiarism/AI Penalty factor of ' . $lp_details['penalty_factor'] . ' applied.</span>';
+                    }
+                } else {
+                    $output .= 'Score: ' . ($lp_score !== null ? round($lp_score, 2) . '/3.0.' : 'N/A.');
+                }
+                $output .= '  </div>';
+                $output .= '</div>';
+            }
+
+            $url = new moodle_url('/mod/assign/submission/cheqmate/advanced_report.php', ['id' => $submission->id]);
+
+            if ($is_owner && $student_view) {
+                $output .= '<div style="margin-top: 10px;">';
+                $output .= '<iframe src="' . $url->out() . '" width="100%" height="450px" style="border: 1px solid #ddd; border-radius: 4px;"></iframe>';
+                $output .= '</div>';
+            } else if ($is_teacher) {
+                $reset_url = new moodle_url('/mod/assign/submission/cheqmate/reset_grade.php', [
+                    'id' => $submission->id,
+                    'sesskey' => sesskey()
+                ]);
+                $recheck_url = new moodle_url('/mod/assign/submission/cheqmate/recheck_grade.php', [
+                    'id' => $submission->id,
+                    'sesskey' => sesskey()
+                ]);
+
+                $output .= '<select class="custom-select custom-select-sm" onchange="if(this.value) { if(this.value.indexOf(\'confirm:\') === 0) { var parts = this.value.substring(8).split(\'|\'); if(confirm(parts[0])) { window.location.href = parts[1]; } } else { window.open(this.value, \'_blank\'); } this.value=\'\'; }" style="width: auto; font-size: 0.85em; padding: 2px 6px; height: auto; margin-top: 8px; display: inline-block;">';
+                $output .= '  <option value="">&#8942; Actions</option>';
+                if (!empty($result_json['details'])) {
+                    $output .= '  <option value="' . $url->out() . '">View Advanced Report</option>';
+                }
+                $output .= '  <option value="confirm:Are you sure you want to recheck auto-grading for this student?|' . $recheck_url->out() . '">Re-check Grades</option>';
+                $output .= '  <option value="confirm:Are you sure you want to reset the rubric grades for this student?|' . $reset_url->out() . '" style="color: red;">Reset Grades</option>';
+                $output .= '</select>';
+            }
+
             if ($is_owner && $submission->status != 'submitted') {
                 $submiturl = new moodle_url('/mod/assign/submission/cheqmate/submit_assignment.php', [
                     'id' => $submission->id,
@@ -879,7 +1077,7 @@ class assign_submission_cheqmate extends assign_submission_plugin {
                 $output .= '</button>';
                 $output .= '</form>';
                 $output .= '</div>';
-                
+
                 // Inject Javascript to hide Moodle's own submit button if it's there.
                 $output .= '<script>
                 (function() {
@@ -910,7 +1108,7 @@ class assign_submission_cheqmate extends assign_submission_plugin {
                 })();
                 </script>';
             }
-            
+
             return $output;
         }
 
@@ -920,35 +1118,38 @@ class assign_submission_cheqmate extends assign_submission_plugin {
     /**
      * Display in grading table summary column
      */
-    public function get_grading_summary(stdClass $submission) {
+    public function get_grading_summary(stdClass $submission)
+    {
         global $DB;
-        
+
         $record = $DB->get_record('assignsub_cheqmate_res', ['submission' => $submission->id]);
         if (!$record) {
             return '-';
         }
-        
+
         $plag = round($record->plagiarism_score, 1);
         $ai = round($record->ai_probability, 1);
-        
+
         $plag_class = $plag > 50 ? 'badge-danger' : ($plag > 25 ? 'badge-warning' : 'badge-success');
         $ai_class = $ai > 50 ? 'badge-danger' : ($ai > 25 ? 'badge-warning' : 'badge-success');
-        
+
         return '<span class="badge ' . $plag_class . '" style="margin-right: 3px;">P: ' . $plag . '%</span>' .
-               '<span class="badge ' . $ai_class . '">AI: ' . $ai . '%</span>';
+            '<span class="badge ' . $ai_class . '">AI: ' . $ai . '%</span>';
     }
-    
+
     /**
      * Return true if this plugin accepts submissions
      */
-    public function is_empty(stdClass $submission) {
+    public function is_empty(stdClass $submission)
+    {
         return false;
     }
-    
+
     /**
      * Get the default setting for submission plugin
      */
-    public function get_default_setting() {
+    public function get_default_setting()
+    {
         return true;
     }
 }

@@ -46,23 +46,19 @@ if ($result_record) {
     $DB->insert_record('assignsub_cheqmate_res', $result_record);
 }
 
-// Instantiate Moodle assign class to do submission processing correctly
+// Instantiate the assignment class
 $assignment = new assign($context, $cm, $course);
 
-// We need to submit for grading
+// Execute Moodle's native submit for grading process (which runs rubric auto-grading via our plugin)
+$notices = array();
 $data = new stdClass();
-$data->userid = $submission->userid;
-// Accept submission statement if required
-$data->submissionstatement = 1;
+$data->userid = $USER->id;
+$data->submissionstatement = 1; // Bypass native submission statement screen if required
 
-$notices = [];
-$success = $assignment->submit_for_grading($data, $notices);
-
-if ($success) {
-    // If successful, redirect back to assignment page with a success message
-    redirect(new moodle_url('/mod/assign/view.php', array('id' => $cm->id)), 'Assignment submitted successfully.', null, \core\output\notification::NOTIFY_SUCCESS);
-} else {
-    // If failed, redirect with notices or error message
-    $message = !empty($notices) ? implode('<br>', $notices) : 'Could not submit assignment for grading.';
-    redirect(new moodle_url('/mod/assign/view.php', array('id' => $cm->id)), $message, null, \core\output\notification::NOTIFY_ERROR);
+if (!$assignment->submit_for_grading($data, $notices)) {
+    $errormsg = !empty($notices) ? implode(', ', $notices) : 'Submission failed.';
+    throw new moodle_exception('error_submission_failed', 'assignsubmission_cheqmate', '', $errormsg);
 }
+
+// Redirect back to Moodle's assignment view page
+redirect(new moodle_url('/mod/assign/view.php', array('id' => $cm->id)));

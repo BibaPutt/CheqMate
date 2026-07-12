@@ -21,6 +21,8 @@ $string['student_view_help'] = 'Students can see their plagiarism/AI scores afte
 // --- Punctuality Settings Strings ---
 $string['punctuality_settings'] = 'Punctuality Auto-Grading Settings';
 $string['auto_grading_enabled'] = 'Enable Auto Grading for Punctuality';
+$string['auto_submit_grade'] = 'True Auto-Submit Grade';
+$string['auto_submit_grade_help'] = 'If enabled, rubric grades are released immediately to students upon final submission, rather than remaining as draft grades for teacher review.';
 $string['criteria_name'] = 'Rubric Criteria Name';
 $string['deduction_amount'] = 'Deduction Amount';
 $string['deduction_interval_days'] = 'Deduction Interval (Days)';
@@ -128,3 +130,4 @@ $string['grading_strictness']           = 'Auto-Grading Strictness (%)';
 $string['grading_strictness_help']      = 'The minimum percentage of unique keywords from the lab manual that the student must cover to receive a full grade. Higher values require more coverage (stricter checking). Default is 50%.';
 $string['final_submission']             = 'Final Submission to Teacher';
 $string['confirm_final_submission']     = 'Are you sure you want to submit this assignment to the teacher? You will not be able to make changes after submission.';
+$string['error_submission_failed']     = 'Submission failed: {$a}';

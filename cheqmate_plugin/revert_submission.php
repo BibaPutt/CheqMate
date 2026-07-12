@@ -86,6 +86,33 @@ if ($action === 'revert' && $studentid > 0 && confirm_sesskey()) {
                 'timemodified' => time(),
             ]);
 
+            // Clear grades and rubric fillings
+            $assign_sub = $DB->get_record('assign_submission', ['id' => $sub_id]);
+            if ($assign_sub) {
+                $grade = $DB->get_record('assign_grades', [
+                    'assignment' => $assign_sub->assignment,
+                    'userid' => $studentid,
+                    'attemptnumber' => $assign_sub->attemptnumber
+                ]);
+                if ($grade) {
+                    $instances = $DB->get_records('grading_instances', ['itemid' => $grade->id]);
+                    foreach ($instances as $instance) {
+                        $DB->delete_records('gradingform_rubric_fillings', ['instanceid' => $instance->id]);
+                        $DB->delete_records('grading_instances', ['id' => $instance->id]);
+                    }
+                    $grade->grade = -1.0;
+                    $grade->grader = -1;
+                    $grade->timemodified = time();
+                    $DB->update_record('assign_grades', $grade);
+
+                    $cm = get_coursemodule_from_instance('assign', $assign_sub->assignment, $courseid, false, IGNORE_MISSING);
+                    if ($cm) {
+                        $assignment = new assign(context_module::instance($cm->id), $cm, $course);
+                        $assignment->update_grade($grade);
+                    }
+                }
+            }
+
             $reverted++;
         }
 

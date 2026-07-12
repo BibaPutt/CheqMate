@@ -4,13 +4,15 @@ require_once($CFG->dirroot . '/mod/assign/locallib.php');
 
 $submissionid = required_param('id', PARAM_INT);
 
-// Basic checks and capabilities
-require_login();
 $submission = $DB->get_record('assign_submission', array('id' => $submissionid), '*', MUST_EXIST);
 $assign = $DB->get_record('assign', array('id' => $submission->assignment), '*', MUST_EXIST);
 $course = $DB->get_record('course', array('id' => $assign->course), '*', MUST_EXIST);
 $cm = get_coursemodule_from_instance('assign', $assign->id, $course->id, false, MUST_EXIST);
 $context = context_module::instance($cm->id);
+
+require_login($course, false, $cm);
+$PAGE->set_url('/mod/assign/submission/cheqmate/advanced_report.php', ['id' => $submissionid]);
+$PAGE->set_context($context);
 
 $is_teacher = has_capability('mod/assign:grade', $context);
 $is_owner = ($USER->id == $submission->userid);
@@ -29,9 +31,6 @@ if (!$result_record) {
 }
 
 $details = json_decode($result_record->json_result, true);
-if (empty($details['details'])) {
-    throw new moodle_exception('No identical peers found to generate an advanced report against.');
-}
 
 // Get source file
 $fs = get_file_storage();
@@ -53,7 +52,8 @@ $post_data = array(
 $tmps_to_delete = [$source_tmp];
 
 $i = 0;
-foreach ($details['details'] as $match) {
+$matches_list = (!empty($details) && isset($details['details'])) ? $details['details'] : [];
+foreach ($matches_list as $match) {
     if ($i >= 4) break; // Limit to top 4 matches for multi-color clarity
 
     if (isset($match['source_type']) && $match['source_type'] == 'global') {

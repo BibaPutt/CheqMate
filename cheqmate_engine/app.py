@@ -255,6 +255,7 @@ async def analyze_submission(request: SubmissionRequest):
                             target_section = sec
                             break
                             
+                sliced_successfully = False
                 if target_section:
                     start_page = target_section.get("start_page", 1)
                     end_page = target_section.get("end_page", 1)
@@ -271,6 +272,7 @@ async def analyze_submission(request: SubmissionRequest):
                         if section_text:
                             grading_full_text = section_text
                             expected_images = section_images
+                            sliced_successfully = True
                             logger.info(f"Successfully sliced global source. Sliced text len: {len(section_text)}, Sliced images: {section_images}")
                         else:
                             logger.warning(f"Slicing returned empty text. Falling back to full manual.")
@@ -285,32 +287,194 @@ async def analyze_submission(request: SubmissionRequest):
                     return {w for w in words if w not in stop_words and len(w) > 1}
                 
                 student_words = preprocess_words(text)
-                grading_words = preprocess_words(grading_full_text)
                 
-                logger.info(f"Topic Knowledge Debug:")
-                logger.info(f"  Student text length: {len(text)}")
-                logger.info(f"  Grading text length: {len(grading_full_text)}")
-                logger.info(f"  Student words count: {len(student_words)}")
-                logger.info(f"  Grading words count: {len(grading_words)}")
-                logger.info(f"  Intersection count: {len(student_words.intersection(grading_words))}")
-                logger.info(f"  Sample student words: {list(student_words)[:20]}")
-                logger.info(f"  Sample grading words: {list(grading_words)[:20]}")
+                containment = 0.0
+                missing_sections = []
                 
-                if grading_words:
-                    intersection = student_words.intersection(grading_words)
-                    containment = len(intersection) / len(grading_words) if len(grading_words) > 0 else 0.0
+                # Helpers for dynamic matching logic with lenient word similarity / edit distance
+                def edit_distance(s1: str, s2: str) -> int:
+                    if len(s1) > len(s2):
+                        s1, s2 = s2, s1
+                    distances = range(len(s1) + 1)
+                    for i2, c2 in enumerate(s2):
+                        distances_ = [i2+1]
+                        for i1, c1 in enumerate(s1):
+                            if c1 == c2:
+                                distances_.append(distances[i1])
+                            else:
+                                distances_.append(1 + min((distances[i1], distances[i1 + 1], distances_[-1])))
+                        distances = distances_
+                    return distances[-1]
+
+                def words_are_similar(w1: str, w2: str) -> bool:
+                    w1, w2 = w1.lower(), w2.lower()
+                    if w1 == w2:
+                        return True
+                    # Substring check (e.g. 'intro' in 'introduction')
+                    if (len(w1) >= 3 and w1 in w2) or (len(w2) >= 3 and w2 in w1):
+                        return True
+                    # Levenshtein distance check (allow up to 2 edits for words >= 3 chars)
+                    try:
+                        if len(w1) >= 3 and len(w2) >= 3:
+                            if edit_distance(w1, w2) <= 2:
+                                return True
+                    except Exception:
+                        pass
+                    return False
+
+                # Define standard categories with clean keywords only (no hardcoded typos)
+                categories = {
+                    "Aim/Objective": ["aim", "objective", "objectives"],
+                    "Theory/Introduction": ["theory", "introduction", "intro", "concept"],
+                    "Procedure/Methodology": ["procedure", "methodology", "method", "task", "step", "steps"],
+                    "Observation/Results": ["observation", "observations", "result", "results", "output"],
+                    "Conclusion/Discussion": ["conclusion", "conclusions", "discussion"],
+                    "Code": ["code", "program", "source"],
+                    "Input": ["input"],
+                    "Logic": ["logic"]
+                }
+
+                # Scan reference text dynamically for headings/sections (Fix 6)
+                expected_headings = []
+                lines = grading_full_text.split('\n')
+                for line in lines:
+                    line_strip = line.strip()
+                    if not line_strip or len(line_strip) < 3 or len(line_strip) > 50:
+                        continue
                     
-                    # Strictness setting of 50 corresponds to 0.20 (20%) required coverage
-                    strictness_val = request.grading_strictness or 50
-                    if strictness_val <= 0:
-                        strictness_val = 50
-                    coverage_threshold = (strictness_val / 50.0) * 0.20
+                    is_section = False
+                    if line_strip.isupper() and any(c.isalpha() for c in line_strip):
+                        is_section = True
+                    else:
+                        prefixes = ['aim', 'objective', 'intro', 'theory', 'concept', 'procedure', 'method', 'task', 'step', 'observation', 'result', 'conclusion', 'discussion', 'code', 'output', 'input', 'logic']
+                        if any(line_strip.lower().startswith(p) for p in prefixes):
+                            is_section = True
+                            
+                    if is_section:
+                        cleaned = re.sub(r'^[\d\.\-\s]+', '', line_strip.lower()).strip()
+                        first_word = re.findall(r'\b\w+\b', cleaned)
+                        if first_word:
+                            search_word = first_word[0]
+                            # Exclude english stop words and very short words
+                            if search_word not in stop_words and len(search_word) > 2:
+                                # Resolve to actual standard mapped category label if possible using similarity
+                                mapped_label = line_strip
+                                target_search = search_word
+                                for cat_name, keywords in categories.items():
+                                    if any(words_are_similar(search_word, kw) for kw in keywords):
+                                        mapped_label = cat_name
+                                        target_search = keywords[0] # Use standard category keyword
+                                        break
+                                expected_headings.append((mapped_label, target_search))
+
+                # De-duplicate expected headings
+                seen = set()
+                unique_expected = []
+                for label, search_word in expected_headings:
+                    if search_word not in seen:
+                        seen.add(search_word)
+                        unique_expected.append((label, search_word))
+
+                if not unique_expected:
+                    unique_expected = [
+                        ("Aim/Objective", "aim"),
+                        ("Code", "code"),
+                        ("Output", "output")
+                    ]
+                
+                student_cleaned = re.sub(r'[^a-z0-9\s]', ' ', text.lower())
+                student_words_list = set(student_cleaned.split())
+
+                for label, search_word in unique_expected:
+                    matched = False
+                    allowed_keywords = [search_word]
+                    for cat_name, keywords in categories.items():
+                        if cat_name == label:
+                            allowed_keywords = keywords
+                            break
+
+                    for sw in student_words_list:
+                        if any(words_are_similar(sw, kw) for kw in allowed_keywords):
+                            matched = True
+                            break
+                    if not matched:
+                        missing_sections.append(label)
+                
+                # Check if sections are defined in the global manual (Fix 6)
+                sections_list = []
+                if grading_source.get("sections"):
+                    try:
+                        sections_list = json.loads(grading_source["sections"])
+                    except Exception as e:
+                        logger.error(f"Failed to parse sections list for containment: {e}")
+
+                if request.section_tag and target_section:
+                    # If grading against a specific section/experiment, calculate containment against sliced text
+                    grading_words = preprocess_words(grading_full_text)
+                    if grading_words:
+                        intersection = student_words.intersection(grading_words)
+                        containment = len(intersection) / len(grading_words) if len(grading_words) > 0 else 0.0
+                    else:
+                        containment = 1.0
+                elif sections_list and isinstance(sections_list, list):
+                    # Proportional section coverage: calculate containment for each section
+                    section_containments = []
+                    permanent_filename = f"{request.course_id}_{grading_source['filename']}"
+                    permanent_path = os.path.join(GLOBAL_SOURCES_DIR, permanent_filename)
                     
-                    import math
-                    topic_similarity = min(math.sqrt(containment / coverage_threshold), 1.0)
-                    topic_knowledge_score = 1.0 + topic_similarity * 2.0
+                    for sec in sections_list:
+                        sec_words = set()
+                        if os.path.exists(permanent_path):
+                            s_page = sec.get("start_page", 1)
+                            e_page = sec.get("end_page", 1)
+                            sec_text = processor.extract_text_from_pages(permanent_path, s_page, e_page)
+                            if sec_text:
+                                sec_words = preprocess_words(sec_text)
+                                
+                        if sec_words:
+                            sec_intersection = student_words.intersection(sec_words)
+                            sec_cont = len(sec_intersection) / len(sec_words)
+                            section_containments.append(sec_cont)
+                        else:
+                            section_containments.append(1.0)
+                            
+                    containment = sum(section_containments) / len(section_containments) if section_containments else 0.0
                 else:
-                    topic_knowledge_score = 3.0
+                    grading_words = preprocess_words(grading_full_text)
+                    if grading_words:
+                        intersection = student_words.intersection(grading_words)
+                        containment = len(intersection) / len(grading_words) if len(grading_words) > 0 else 0.0
+                    else:
+                        containment = 1.0
+
+                # Strictness threshold check (more lenient default, requiring 7% containment at 50 strictness)
+                strictness_val = request.grading_strictness or 50
+                if strictness_val <= 0:
+                    strictness_val = 50
+                coverage_threshold = (strictness_val / 50.0) * 0.07
+                
+                import math
+                topic_similarity = min(math.sqrt(containment / coverage_threshold), 1.0)
+                topic_knowledge_score = 1.0 + topic_similarity * 2.0
+                
+                # Deduct 0.1 for each missing expected section, up to 0.5 max (Fix 6)
+                if missing_sections:
+                    deduction = min(len(missing_sections) * 0.1, 0.5)
+                    topic_knowledge_score -= deduction
+
+                # Fix 5: Punish wrong/unmatching assignments significantly (only if manual was successfully sliced)
+                is_completely_wrong = False
+                # If target section was specified but slicing failed, do not punish since containment comparison is against full manual
+                should_punish = True
+                if request.section_tag and not sliced_successfully:
+                    should_punish = False
+
+                if should_punish:
+                    if containment < 0.03:  # Below 3% coverage is completely wrong
+                        is_completely_wrong = True
+                        topic_knowledge_score = 1.0
+                    elif containment < coverage_threshold:  # Below required threshold is poor match
+                        topic_knowledge_score = 1.0 + (topic_knowledge_score - 1.0) * 0.5
                 
                 # --- Lab Performance ---
                 # 1. Output screenshots
@@ -376,18 +540,28 @@ async def analyze_submission(request: SubmissionRequest):
                 
                 lab_performance_base = 1.0 + lab_perf_base_ratio * 2.0
                 
-                # Apply Plagiarism & AI combined penalty
-                combined_plag_ai = max(plag_score, ai_prob)
-                if combined_plag_ai < 30:
-                    penalty_factor = 1.0
-                elif combined_plag_ai < 50:
-                    penalty_factor = 0.8
-                elif combined_plag_ai < 70:
-                    penalty_factor = 0.5
+                # Punish wrong assignments on Lab Performance too (Fix 5)
+                if is_completely_wrong or lab_perf_base_ratio < 0.05:
+                    lab_performance_score = 1.0
+                elif lab_perf_base_ratio < 0.15:
+                    lab_performance_base = 1.0 + (lab_performance_base - 1.0) * 0.5
+                    lab_performance_score = lab_performance_base
                 else:
-                    penalty_factor = 0.2
+                    lab_performance_score = lab_performance_base
+
+                # Apply Plagiarism & AI combined penalty (more lenient)
+                combined_plag_ai = max(plag_score, ai_prob)
+                if combined_plag_ai < 40:
+                    penalty_factor = 1.0
+                elif combined_plag_ai < 60:
+                    penalty_factor = 0.9
+                elif combined_plag_ai < 85:
+                    penalty_factor = 0.8
+                else:
+                    penalty_factor = 0.6
                 
-                lab_performance_score = lab_performance_base * penalty_factor
+                if not (is_completely_wrong or lab_perf_base_ratio < 0.05):
+                    lab_performance_score = lab_performance_score * penalty_factor
                 
                 # Cap scores between 1.0 and 3.0
                 topic_knowledge_score = min(max(topic_knowledge_score, 1.0), 3.0)
@@ -446,6 +620,22 @@ async def analyze_submission(request: SubmissionRequest):
             "global_source_checked": request.check_global_source,
             "topic_knowledge_score": round(topic_knowledge_score, 2),
             "lab_performance_score": round(lab_performance_score, 2),
+            "grading_details": {
+                "topic_knowledge": {
+                    "containment": round(containment, 4),
+                    "coverage_threshold": round(coverage_threshold, 4),
+                    "strictness": strictness_val,
+                    "missing_sections": missing_sections
+                },
+                "lab_performance": {
+                    "student_images": student_images,
+                    "expected_images": expected_images,
+                    "screenshot_score": round(screenshot_score, 4),
+                    "code_score": round(code_score, 4),
+                    "steps_score": round(steps_score, 4),
+                    "penalty_factor": penalty_factor
+                }
+            },
             "message": "Analysis successful"
         }
 
@@ -537,14 +727,14 @@ async def upload_global_source(request: GlobalSourceRequest):
             sections=sections_json
         )
         
-        if saved:
-            try:
-                permanent_filename = f"{request.course_id}_{request.filename}"
-                permanent_path = os.path.join(GLOBAL_SOURCES_DIR, permanent_filename)
-                shutil.copy2(file_path, permanent_path)
-                logger.info(f"Saved global source permanently to {permanent_path}")
-            except Exception as copy_err:
-                logger.error(f"Failed to copy global source file to permanent storage: {copy_err}")
+        # Always write/overwrite the global source permanently to GLOBAL_SOURCES_DIR on upload
+        try:
+            permanent_filename = f"{request.course_id}_{request.filename}"
+            permanent_path = os.path.join(GLOBAL_SOURCES_DIR, permanent_filename)
+            shutil.copy2(file_path, permanent_path)
+            logger.info(f"Saved global source permanently to {permanent_path}")
+        except Exception as copy_err:
+            logger.error(f"Failed to copy global source file to permanent storage: {copy_err}")
 
         cleanup()
         if saved:

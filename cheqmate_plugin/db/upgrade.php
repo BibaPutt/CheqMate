@@ -114,5 +114,14 @@ function xmldb_assignsubmission_cheqmate_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 20260305027, 'assignsubmission', 'cheqmate');
     }
 
+    if ($oldversion < 20260305030) {
+        $table = new xmldb_table('assignsubmission_cheqmate');
+        $field = new xmldb_field('auto_submit_grade', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0', 'grading_strictness');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        upgrade_plugin_savepoint(true, 20260305030, 'assignsubmission', 'cheqmate');
+    }
+
     return true;
 }

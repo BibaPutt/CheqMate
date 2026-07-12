@@ -52,11 +52,11 @@ class DocumentProcessor:
     def _process_docx(self, file_path: str) -> str:
         doc = Document(file_path)
         paragraphs_text = []
-        for para in doc.paragraphs:
+        
+        def process_para(para):
             para_text = []
             for run in para.runs:
                 is_invisible = False
-                # Filter out white/near-white text
                 if run.font.color and run.font.color.rgb:
                     rgb = run.font.color.rgb
                     try:
@@ -64,7 +64,6 @@ class DocumentProcessor:
                             is_invisible = True
                     except Exception:
                         pass
-                # Filter out micro-text
                 try:
                     if run.font.size and run.font.size.pt < 3.0:
                         is_invisible = True
@@ -73,11 +72,19 @@ class DocumentProcessor:
                 
                 if not is_invisible:
                     para_text.append(run.text)
-            
             p_str = "".join(para_text)
             if p_str.strip():
                 paragraphs_text.append(p_str)
-                
+
+        for para in doc.paragraphs:
+            process_para(para)
+
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for para in cell.paragraphs:
+                        process_para(para)
+                        
         return "\n".join(paragraphs_text)
 
     def _extract_visible_text(self, page) -> str:

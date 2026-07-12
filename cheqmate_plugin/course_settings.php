@@ -295,6 +295,7 @@ if ($settingsform->is_cancelled()) {
                         $existing_source->sections = $sections_str;
                     }
                     $DB->update_record("cheqmate_global_source", $existing_source);
+                    $manual_id = $existing_source->id;
                 } else {
                     $record = new stdClass();
                     $record->courseid = $courseid;
@@ -305,8 +306,22 @@ if ($settingsform->is_cancelled()) {
                     $record->userid = $USER->id;
                     $record->is_grading = 0;
                     $record->sections = $sections_str;
-                    $DB->insert_record("cheqmate_global_source", $record);
+                    $manual_id = $DB->insert_record("cheqmate_global_source", $record);
                 }
+
+                // Save to Moodle permanent filearea
+                $context_course = context_course::instance($courseid);
+                $fs->delete_area_files($context_course->id, 'assignsubmission_cheqmate', 'global_source', $manual_id);
+                $file_record = array(
+                    'contextid' => $context_course->id,
+                    'component' => 'assignsubmission_cheqmate',
+                    'filearea' => 'global_source',
+                    'itemid' => $manual_id,
+                    'filepath' => '/',
+                    'filename' => $filename,
+                    'userid' => $USER->id
+                );
+                $fs->create_file_from_storedfile($file_record, $file);
             }
         }
     }
