@@ -81,7 +81,7 @@ if ($action === 'clear' && $assignmentid > 0 && confirm_sesskey()) {
             ['assignid' => $assignmentid]
         );
 
-        $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://localhost:8000';
+        $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://127.0.0.1:8000';
         $fs      = get_file_storage();
         $cleared = 0;
         $errors  = 0;

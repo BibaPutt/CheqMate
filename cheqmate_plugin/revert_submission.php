@@ -42,7 +42,7 @@ if ($action === 'revert' && $studentid > 0 && confirm_sesskey()) {
         $message      = assignsubmission_cheqmate_get_string('revert_none_selected', 'No assignments were selected. Please tick at least one assignment.');
         $message_type = 'warning';
     } else {
-        $api_url  = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://localhost:8000';
+        $api_url  = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://127.0.0.1:8000';
         $reverted = 0;
         $errors   = 0;
 

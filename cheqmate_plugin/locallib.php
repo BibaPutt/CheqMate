@@ -397,21 +397,56 @@ class assign_submission_cheqmate extends assign_submission_plugin
         $assignmentid = $this->assignment->get_instance()->id;
         $skip_patterns = $this->get_skip_patterns();
 
-        // Self-heal/ensure grading manual PDF exists on engine filesystem
+        // Self-heal/ensure grading manual PDF exists on engine filesystem via API
         $grading_manual = $DB->get_record('cheqmate_global_source', ['courseid' => $courseid, 'is_grading' => 1]);
         if ($grading_manual) {
-            $engine_manual_name = $courseid . '_' . $grading_manual->filename;
-            $engine_manual_path = __DIR__ . '/../cheqmate_engine/global_sources/' . $engine_manual_name;
-            if (!file_exists($engine_manual_path)) {
+            $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://127.0.0.1:8000';
+            
+            // Query engine to check if this global source is already uploaded
+            $ch = curl_init(rtrim($api_url, '/') . '/global-source/' . $courseid);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+            $response = curl_exec($ch);
+            $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            
+            $exists_on_engine = false;
+            if ($httpcode == 200) {
+                $res_data = json_decode($response, true);
+                if ($res_data && isset($res_data['sources'])) {
+                    foreach ($res_data['sources'] as $src) {
+                        if ($src['filename'] === $grading_manual->filename) {
+                            $exists_on_engine = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // If not present, upload it via the API
+            if (!$exists_on_engine) {
                 $fs_manual = get_file_storage();
                 $files_manual = $fs_manual->get_area_files(context_course::instance($courseid)->id, 'assignsubmission_cheqmate', 'global_source', $grading_manual->id, 'timemodified', false);
                 if ($files_manual) {
                     $file_manual = reset($files_manual);
-                    $engine_dir = dirname($engine_manual_path);
-                    if (!is_dir($engine_dir)) {
-                        @mkdir($engine_dir, 0777, true);
-                    }
-                    $file_manual->copy_content_to($engine_manual_path);
+                    $filecontent = $file_manual->get_content();
+                    $base64_content = base64_encode($filecontent);
+                    
+                    $payload = json_encode([
+                        'course_id' => (int)$courseid,
+                        'file_path' => $file_manual->get_filename(),
+                        'filename' => $file_manual->get_filename(),
+                        'file_content' => $base64_content
+                    ]);
+                    
+                    $ch = curl_init(rtrim($api_url, '/') . '/global-source/upload');
+                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_POST, true);
+                    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+                    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+                    curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+                    curl_exec($ch);
+                    curl_close($ch);
                 }
             }
         }
@@ -433,8 +468,8 @@ class assign_submission_cheqmate extends assign_submission_plugin
             $filecontent = $file->get_content();
             $base64_content = base64_encode($filecontent);
 
-            $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://localhost:8000';
-            $endpoint = $api_url . '/analyze';
+            $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://127.0.0.1:8000';
+            $endpoint = rtrim($api_url, '/') . '/analyze';
 
             $payload = json_encode([
                 'file_path' => $normalized_temp,
@@ -878,7 +913,7 @@ class assign_submission_cheqmate extends assign_submission_plugin
         $DB->delete_records('assignsub_cheqmate_res', ['submission' => $submission->id]);
 
         // Call engine to delete fingerprint
-        $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://localhost:8000';
+        $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://127.0.0.1:8000';
         $endpoint = $api_url . '/fingerprint/' . $submission->id;
 
         $ch = curl_init($endpoint);

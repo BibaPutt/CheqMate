@@ -79,9 +79,8 @@ function assignsubmission_cheqmate_output_fragment_clear_cache($args) {
     
     $assignmentid = $args['assignmentid'];
     
-    // Call engine to clear cache
-    $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://localhost:8000';
-    $endpoint = $api_url . '/cache/clear';
+    $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://127.0.0.1:8000';
+    $endpoint = rtrim($api_url, '/') . '/cache/clear';
     
     $payload = json_encode(['assignment_id' => $assignmentid]);
     

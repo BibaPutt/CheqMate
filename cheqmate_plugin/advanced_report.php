@@ -92,7 +92,7 @@ foreach ($matches_list as $match) {
 // Get Python Engine URL
 $api_url = get_config('assignsubmission_cheqmate', 'api_url');
 if (!$api_url) {
-    $api_url = 'http://localhost:8000'; // fallback
+    $api_url = 'http://127.0.0.1:8000'; // fallback
 }
 $endpoint = rtrim($api_url, '/') . '/advanced_report';
 

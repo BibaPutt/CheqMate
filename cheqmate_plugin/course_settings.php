@@ -59,8 +59,8 @@ if ($dbman->table_exists($table_ac)) {
 if ($action == 'viewpdf' && $gradeid) {
     $source = $DB->get_record('cheqmate_global_source', ['id' => $gradeid, 'courseid' => $courseid]);
     if ($source) {
-        $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://localhost:8000';
-        $url = $api_url . '/global-source/download/' . $courseid . '/' . rawurlencode($source->filename);
+        $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://127.0.0.1:8000';
+        $url = rtrim($api_url, '/') . '/global-source/download/' . $courseid . '/' . rawurlencode($source->filename);
         
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -106,8 +106,8 @@ if ($action == 'savesections' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $DB->update_record('cheqmate_global_source', $source);
         
         // Sync to engine
-        $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://localhost:8000';
-        $endpoint = $api_url . '/global-source/update-sections';
+        $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://127.0.0.1:8000';
+        $endpoint = rtrim($api_url, '/') . '/global-source/update-sections';
         
         $payload = json_encode([
             'course_id' => (int) $courseid,
@@ -155,8 +155,8 @@ if ($action == 'setgrading' && $gradeid) {
     // Notify the engine of grading document selection
     $grading_source = $DB->get_record('cheqmate_global_source', ['id' => $gradeid]);
     if ($grading_source) {
-        $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://localhost:8000';
-        $endpoint = $api_url . '/global-source/set-grading';
+        $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://127.0.0.1:8000';
+        $endpoint = rtrim($api_url, '/') . '/global-source/set-grading';
         
         $payload = json_encode([
             'course_id' => $courseid,
@@ -251,8 +251,8 @@ if ($settingsform->is_cancelled()) {
             $filecontent = $file->get_content();
             $base64_content = base64_encode($filecontent);
 
-            $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://localhost:8000';
-            $endpoint = $api_url . '/global-source/upload';
+            $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://127.0.0.1:8000';
+            $endpoint = rtrim($api_url, '/') . '/global-source/upload';
 
             $payload = json_encode([
                 'course_id' => $courseid,
