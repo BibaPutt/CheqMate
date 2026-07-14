@@ -10,6 +10,8 @@ import hashlib
 import logging
 import shutil
 import re
+import difflib
+import fitz
 from processor import DocumentProcessor
 from detector import PlagiarismDetector
 from ai_detector import AIDetector
@@ -58,10 +60,18 @@ except Exception as e:
 # Temp directory for file processing
 TEMP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp")
 os.makedirs(TEMP_DIR, exist_ok=True)
+try:
+    os.chmod(TEMP_DIR, 0o777)
+except OSError:
+    pass
 
 # Permanent directory for global source documents
 GLOBAL_SOURCES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "global_sources")
 os.makedirs(GLOBAL_SOURCES_DIR, exist_ok=True)
+try:
+    os.chmod(GLOBAL_SOURCES_DIR, 0o777)
+except OSError:
+    pass
 
 def resolve_moodledata_path(path: str, dataroot: Optional[str] = None) -> str:
     path = path.replace("\\", "/")
@@ -447,11 +457,11 @@ async def analyze_submission(request: SubmissionRequest):
                     else:
                         containment = 1.0
 
-                # Strictness threshold check (more lenient default, requiring 7% containment at 50 strictness)
+                # Strictness threshold check (strictness directly equals required coverage %)
                 strictness_val = request.grading_strictness or 50
                 if strictness_val <= 0:
                     strictness_val = 50
-                coverage_threshold = (strictness_val / 50.0) * 0.07
+                coverage_threshold = strictness_val / 100.0
                 
                 import math
                 topic_similarity = min(math.sqrt(containment / coverage_threshold), 1.0)
@@ -477,22 +487,58 @@ async def analyze_submission(request: SubmissionRequest):
                         topic_knowledge_score = 1.0 + (topic_knowledge_score - 1.0) * 0.5
                 
                 # --- Lab Performance ---
-                # 1. Output screenshots
-                student_images = 0
+                # Helper: normalize text for comparison (lowercase, strip punctuation, remove stop words)
+                def normalize_for_compare(txt):
+                    txt_lower = txt.lower()
+                    cleaned = re.sub(r'[^a-z0-9\s]', ' ', txt_lower)
+                    words = cleaned.split()
+                    return {w for w in words if w not in stop_words and len(w) > 1}
+
+                def fuzzy_match(word, candidate_words, threshold=0.8):
+                    if word in candidate_words:
+                        return True
+                    if len(word) >= 3:
+                        for c in candidate_words:
+                            if len(c) >= 3:
+                                ratio = difflib.SequenceMatcher(None, word, c).ratio()
+                                if ratio >= threshold:
+                                    return True
+                    return False
+
+                # 1. Output screenshots — OCR-based comparison
+                manual_screenshot_ocr = grading_source.get("screenshot_ocr_text", "") or ""
+                student_image_ocr = ""
                 try:
-                    student_images = processor.count_images(file_path)
+                    student_image_ocr = processor.extract_images_from_pages(file_path, 1, 999)
                 except Exception as e:
-                    logger.error(f"Failed to count images for student submission: {e}")
-                
-                if expected_images > 0:
-                    screenshot_score = min(student_images / expected_images, 1.0)
+                    logger.error(f"Failed to OCR student images: {e}")
+
+                # Also scan student text for output/result sections
+                student_text_output = ""
+                output_match = re.search(r'(?:output|result|screen|terminal|console)[:\s]+(.{20,500})', text, re.IGNORECASE)
+                if output_match:
+                    student_text_output = output_match.group(0)
+
+                student_output_text = (student_image_ocr + " " + student_text_output).strip()
+
+                if manual_screenshot_ocr.strip():
+                    expected_words = normalize_for_compare(manual_screenshot_ocr)
+                    student_words_out = normalize_for_compare(student_output_text)
+                    if expected_words and student_words_out:
+                        matched = sum(1 for w in expected_words if fuzzy_match(w, student_words_out))
+                        screenshot_score = max(0.3, matched / len(expected_words))
+                    elif expected_words and not student_words_out:
+                        screenshot_score = 0.0
+                    else:
+                        screenshot_score = 1.0
                     screenshot_weight = 0.3
                 else:
-                    screenshot_score = 1.0
+                    # Manual has no screenshot OCR text — skip component
+                    screenshot_score = 0.0
                     screenshot_weight = 0.0
-                
-                # 2. Code structure
-                def get_code_tokens(txt: str) -> set:
+
+                # 2. Code structure + code-output consistency
+                def get_code_tokens(txt):
                     code_words = set()
                     code_patterns = [
                         r'^\s*(?:def|class|import|from|if|for|while|return|function|var|let|const|public|private)\s',
@@ -507,38 +553,99 @@ async def analyze_submission(request: SubmissionRequest):
 
                 student_code = get_code_tokens(text)
                 grading_code = get_code_tokens(grading_full_text)
-                
+
                 if grading_code:
-                    code_score = len(student_code.intersection(grading_code)) / len(grading_code)
-                    code_weight = 0.4 if expected_images > 0 else 0.5
+                    keyword_score = len(student_code.intersection(grading_code)) / len(grading_code)
                 else:
-                    code_score = 1.0
-                    code_weight = 0.0
-                
-                # 3. Steps attempted
+                    keyword_score = 1.0
+
+                # Code-output consistency: check if print/log values appear in output
+                output_patterns = [
+                    r'print\s*\(\s*["\'](.+?)["\']',
+                    r'console\.log\s*\(\s*["\'](.+?)["\']',
+                    r'System\.out\.println\s*\(\s*"(.+?)"',
+                    r'echo\s+["\'](.+?)["\']',
+                ]
+                code_outputs = []
+                for line in text.split('\n'):
+                    for pattern in output_patterns:
+                        match = re.search(pattern, line, re.IGNORECASE)
+                        if match:
+                            val = match.group(1).strip().lower()
+                            if len(val) > 2:
+                                code_outputs.append(val)
+
+                if code_outputs:
+                    output_section = text.lower()
+                    matched_outputs = sum(1 for val in code_outputs if val in output_section or fuzzy_match(val, normalize_for_compare(output_section)))
+                    consistency_score = matched_outputs / len(code_outputs)
+                else:
+                    consistency_score = 1.0
+
+                code_score = keyword_score * 0.8 + consistency_score * 0.2
+                code_weight = 0.4 if screenshot_weight > 0 else 0.5
+
+                # 3. Steps attempted — order + depth verification
                 step_patterns = [r'\bstep\s*\d+\b', r'\btask\s*\d+\b', r'\bquestion\s*\d+\b', r'\bexercise\s*\d+\b']
-                grading_steps = set()
-                grading_text_lower = grading_full_text.lower()
-                for pattern in step_patterns:
-                    matches = re.findall(pattern, grading_text_lower)
-                    grading_steps.update(matches)
-                
-                student_text_lower = text.lower()
-                if grading_steps:
-                    steps_found = sum(1 for step in grading_steps if step in student_text_lower)
-                    steps_score = steps_found / len(grading_steps)
-                    steps_weight = 1.0 - screenshot_weight - code_weight
+                grading_text_lines = grading_full_text.lower().split('\n')
+                student_text_lines = text.lower().split('\n')
+
+                # Extract manual steps with position
+                manual_steps = []
+                for i, line in enumerate(grading_text_lines):
+                    for pattern in step_patterns:
+                        m = re.search(pattern, line.strip())
+                        if m:
+                            manual_steps.append((m.group(0), i))
+                            break
+
+                # Extract student steps with position
+                student_steps = []
+                for i, line in enumerate(student_text_lines):
+                    for pattern in step_patterns:
+                        m = re.search(pattern, line.strip())
+                        if m:
+                            student_steps.append((m.group(0), i))
+                            break
+
+                if manual_steps:
+                    # Count match (60%)
+                    matched_count = sum(1 for ms, _ in manual_steps if any(fuzzy_match(ms, [ss]) for ss, _ in student_steps))
+                    count_ratio = matched_count / len(manual_steps)
+
+                    # Order match (20%) — student steps in same relative order
+                    order_score = 1.0
+                    if len(student_steps) >= 2:
+                        student_positions = [s[1] for s in student_steps]
+                        inversions = sum(1 for a in range(len(student_positions)) for b in range(a+1, len(student_positions)) if student_positions[a] > student_positions[b])
+                        max_inversions = len(student_positions) * (len(student_positions) - 1) / 2
+                        order_score = 1.0 - (inversions / max_inversions) if max_inversions > 0 else 1.0
+
+                    # Content depth (20%) — average text length between steps
+                    depth_scores = []
+                    for idx, (step_text, step_pos) in enumerate(manual_steps):
+                        if idx < len(manual_steps) - 1:
+                            next_pos = manual_steps[idx + 1][1]
+                        else:
+                            next_pos = len(student_text_lines)
+                        chunk = student_text_lines[step_pos:min(step_pos + 15, next_pos)]
+                        content_len = sum(len(l.strip()) for l in chunk if l.strip())
+                        depth_scores.append(min(content_len / 100.0, 1.0))
+                    depth_score = sum(depth_scores) / len(depth_scores) if depth_scores else 0.5
+
+                    steps_score = count_ratio * 0.6 + order_score * 0.2 + depth_score * 0.2
                 else:
                     steps_score = 1.0
-                    steps_weight = 1.0 - screenshot_weight - code_weight if (screenshot_weight + code_weight) < 1.0 else 0.0
-                
+
+                steps_weight = 1.0 - screenshot_weight - code_weight
+
                 total_weight = screenshot_weight + code_weight + steps_weight
                 if total_weight > 0:
                     lab_perf_base_ratio = (screenshot_score * screenshot_weight + code_score * code_weight + steps_score * steps_weight) / total_weight
                 else:
                     lab_perf_base_ratio = 1.0
                 
-                lab_performance_base = 1.0 + lab_perf_base_ratio * 2.0
+                lab_performance_base = 1.0 + lab_perf_base_ratio * 1.7
                 
                 # Punish wrong assignments on Lab Performance too (Fix 5)
                 if is_completely_wrong or lab_perf_base_ratio < 0.05:
@@ -549,23 +656,19 @@ async def analyze_submission(request: SubmissionRequest):
                 else:
                     lab_performance_score = lab_performance_base
 
-                # Apply Plagiarism & AI combined penalty (more lenient)
+                # Apply Plagiarism & AI combined penalty (linear, gentle, max -1.0 deduction)
                 combined_plag_ai = max(plag_score, ai_prob)
-                if combined_plag_ai < 40:
-                    penalty_factor = 1.0
-                elif combined_plag_ai < 60:
-                    penalty_factor = 0.9
-                elif combined_plag_ai < 85:
-                    penalty_factor = 0.8
+                if combined_plag_ai <= 10:
+                    plag_penalty = 0.0
                 else:
-                    penalty_factor = 0.6
+                    plag_penalty = min((combined_plag_ai - 10) / 90.0, 1.0)
                 
                 if not (is_completely_wrong or lab_perf_base_ratio < 0.05):
-                    lab_performance_score = lab_performance_score * penalty_factor
+                    lab_performance_score = lab_performance_score - plag_penalty
                 
                 # Cap scores between 1.0 and 3.0
                 topic_knowledge_score = min(max(topic_knowledge_score, 1.0), 3.0)
-                lab_performance_score = min(max(lab_performance_score, 1.0), 3.0)
+                lab_performance_score = min(max(lab_performance_score, 1.0), 2.7)
             else:
                 logger.info("No grading global source found for course. Using default scores.")
         else:
@@ -628,12 +731,10 @@ async def analyze_submission(request: SubmissionRequest):
                     "missing_sections": missing_sections
                 },
                 "lab_performance": {
-                    "student_images": student_images,
-                    "expected_images": expected_images,
                     "screenshot_score": round(screenshot_score, 4),
                     "code_score": round(code_score, 4),
                     "steps_score": round(steps_score, 4),
-                    "penalty_factor": penalty_factor
+                    "plag_penalty": round(plag_penalty, 4)
                 }
             },
             "message": "Analysis successful"
@@ -716,6 +817,24 @@ async def upload_global_source(request: GlobalSourceRequest):
         
         sections_json = json.dumps(sections_list) if sections_list else None
 
+        # Cache screenshot OCR text from manual (done once at upload, reused per-student)
+        screenshot_ocr_text = ""
+        if file_path.lower().endswith('.pdf') and sections_list:
+            try:
+                all_ocr = []
+                doc = fitz.open(file_path)
+                total_pages = len(doc)
+                for sec in sections_list:
+                    s = sec.get("start_page", 1)
+                    e = sec.get("end_page", total_pages)
+                    ocr_text = processor.extract_images_from_pages(file_path, s, e)
+                    if ocr_text.strip():
+                        all_ocr.append(ocr_text)
+                screenshot_ocr_text = "\n".join(all_ocr)
+                logger.info(f"Cached screenshot OCR text from manual: {len(screenshot_ocr_text)} chars")
+            except Exception as ocr_err:
+                logger.error(f"Failed to cache screenshot OCR from manual: {ocr_err}")
+
         # Save to database
         saved = storage.save_global_source(
             request.course_id,
@@ -724,7 +843,8 @@ async def upload_global_source(request: GlobalSourceRequest):
             shingles,
             full_text=text,
             image_count=image_count,
-            sections=sections_json
+            sections=sections_json,
+            screenshot_ocr_text=screenshot_ocr_text
         )
         
         # Always write/overwrite the global source permanently to GLOBAL_SOURCES_DIR on upload
@@ -795,6 +915,14 @@ def download_global_source_file(course_id: int, filename: str):
     if not os.path.exists(permanent_path):
         raise HTTPException(status_code=404, detail="Global source file not found")
     return FileResponse(path=permanent_path, filename=filename, media_type="application/pdf")
+
+
+@app.get("/global-source/exists/{course_id}/{filename}")
+def check_global_source_exists(course_id: int, filename: str):
+    """Lightweight check if a global source file exists on disk"""
+    permanent_filename = f"{course_id}_{filename}"
+    permanent_path = os.path.join(GLOBAL_SOURCES_DIR, permanent_filename)
+    return {"exists": os.path.exists(permanent_path)}
 
 
 @app.get("/global-source/{course_id}")

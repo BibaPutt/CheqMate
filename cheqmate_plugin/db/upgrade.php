@@ -123,5 +123,14 @@ function xmldb_assignsubmission_cheqmate_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 20260305030, 'assignsubmission', 'cheqmate');
     }
 
+    if ($oldversion < 20260714001) {
+        $table = new xmldb_table('cheqmate_global_source');
+        $field = new xmldb_field('screenshot_ocr_text', XMLDB_TYPE_TEXT, null, null, null, null, null, 'sections');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        upgrade_plugin_savepoint(true, 20260714001, 'assignsubmission', 'cheqmate');
+    }
+
     return true;
 }

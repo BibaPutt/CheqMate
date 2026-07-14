@@ -373,6 +373,8 @@ class assign_submission_cheqmate extends assign_submission_plugin
     {
         global $DB, $CFG;
 
+        set_time_limit(0);
+
         $settings = $this->get_plugin_settings();
         if (!$settings || !$settings->enabled) {
             return false;
@@ -402,8 +404,9 @@ class assign_submission_cheqmate extends assign_submission_plugin
         if ($grading_manual) {
             $api_url = get_config('assignsubmission_cheqmate', 'api_url') ?: 'http://127.0.0.1:8000';
             
-            // Query engine to check if this global source is already uploaded
-            $ch = curl_init(rtrim($api_url, '/') . '/global-source/' . $courseid);
+            // Query engine to check if the physical file exists on disk
+            $encoded_filename = rawurlencode($grading_manual->filename);
+            $ch = curl_init(rtrim($api_url, '/') . '/global-source/exists/' . $courseid . '/' . $encoded_filename);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_TIMEOUT, 10);
             $response = curl_exec($ch);
@@ -413,14 +416,7 @@ class assign_submission_cheqmate extends assign_submission_plugin
             $exists_on_engine = false;
             if ($httpcode == 200) {
                 $res_data = json_decode($response, true);
-                if ($res_data && isset($res_data['sources'])) {
-                    foreach ($res_data['sources'] as $src) {
-                        if ($src['filename'] === $grading_manual->filename) {
-                            $exists_on_engine = true;
-                            break;
-                        }
-                    }
-                }
+                $exists_on_engine = !empty($res_data['exists']);
             }
             
             // If not present, upload it via the API
@@ -1096,7 +1092,7 @@ class assign_submission_cheqmate extends assign_submission_plugin
                 $output .= '</select>';
             }
 
-            if ($is_owner && $submission->status != 'submitted') {
+            if ($is_owner && (!isset($submission->status) || $submission->status != 'submitted')) {
                 $submiturl = new moodle_url('/mod/assign/submission/cheqmate/submit_assignment.php', [
                     'id' => $submission->id,
                     'sesskey' => sesskey()

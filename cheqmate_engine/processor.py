@@ -310,6 +310,43 @@ class DocumentProcessor:
                 return 0
         return 0
 
+    def extract_images_from_pages(self, file_path: str, start_page: int, end_page: int) -> str:
+        """
+        Extracts and OCRs all embedded images within a specific 1-indexed page range (inclusive).
+        Returns combined OCR text from all images in that range.
+        """
+        try:
+            doc = fitz.open(file_path)
+            total_pages = len(doc)
+            start_idx = max(0, start_page - 1)
+            end_idx = min(total_pages - 1, end_page - 1)
+
+            if start_idx > end_idx:
+                return ""
+
+            ocr_texts = []
+            for page_num in range(start_idx, end_idx + 1):
+                page = doc[page_num]
+                image_list = page.get_images(full=True)
+                for img in image_list:
+                    try:
+                        xref = img[0]
+                        base_image = doc.extract_image(xref)
+                        image_bytes = base_image["image"]
+                        nparr = np.frombuffer(image_bytes, np.uint8)
+                        cv_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                        if cv_img is not None:
+                            ocr_text = pytesseract.image_to_string(self._preprocess_image(cv_img))
+                            if ocr_text.strip():
+                                ocr_texts.append(ocr_text)
+                    except Exception as img_err:
+                        logger.warning(f"Failed to OCR image on page {page_num}: {img_err}")
+
+            return "\n".join(ocr_texts)
+        except Exception as e:
+            logger.error(f"Error extracting images from pages {start_page}-{end_page}: {e}")
+            return ""
+
     def auto_extract_sections(self, file_path: str) -> list:
         """
         Attempts to automatically detect experiment/lab sections in a PDF manual.
